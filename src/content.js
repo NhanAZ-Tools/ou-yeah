@@ -324,7 +324,15 @@
     if (document.fullscreenElement || pointInsideElement(event.clientX, event.clientY, video)) {
       lastPointerInVideoAt = Date.now();
       scheduleHudPosition();
-      showHudFor(1800);
+
+      const nativeVisibility = getPlayerControlsVisibility();
+      if (nativeVisibility === true) {
+        showHudFor(0);
+      } else if (nativeVisibility === false) {
+        hideHud(true);
+      } else {
+        showHudFor(1800);
+      }
     }
   }
 
@@ -439,7 +447,12 @@
       return;
     }
 
-    if (nativeVisibility === false || Date.now() - lastPointerInVideoAt > 1800) {
+    if (nativeVisibility === false) {
+      hideHud(true);
+      return;
+    }
+
+    if (Date.now() - lastPointerInVideoAt > 1800) {
       hideHud();
     }
   }
@@ -528,14 +541,19 @@
   }
 
   function isElementVisible(element) {
-    const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
-    const opacity = Number.parseFloat(style.opacity || "1");
 
     if (element.closest("[aria-hidden='true'], [hidden]")) return false;
-    if (style.display === "none" || style.visibility === "hidden" || opacity < 0.05) return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
     if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false;
+
+    for (let current = element; current?.nodeType === Node.ELEMENT_NODE; current = current.parentElement) {
+      const style = getComputedStyle(current);
+      const opacity = Number.parseFloat(style.opacity || "1");
+
+      if (style.display === "none" || style.visibility === "hidden" || opacity < 0.05) return false;
+      if (current === element && style.pointerEvents === "none") return false;
+    }
 
     return true;
   }
@@ -558,8 +576,8 @@
     hudVisibleTimer = window.setTimeout(hideHud, delay);
   }
 
-  function hideHud() {
-    if (!hud?.host || hud.host.matches(":hover") || hud.host.classList.contains("menu-open")) return;
+  function hideHud(force = false) {
+    if (!hud?.host || (!force && hud.host.matches(":hover")) || hud.host.classList.contains("menu-open")) return;
     hud.host.classList.remove("is-visible");
   }
 

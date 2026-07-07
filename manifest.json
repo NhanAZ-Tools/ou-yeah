@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ELOLMS Video Tools",
   "description": "Điều khiển tốc độ, tua nhanh/tua ngược và tải video bài giảng trên ELOLMS OU.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "minimum_chrome_version": "109",
   "icons": {
     "16": "src/icon-16.png",
