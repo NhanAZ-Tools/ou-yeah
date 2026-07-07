@@ -11,6 +11,21 @@
   const MEDIA_URL_RE = /\.(mp4|m4v|webm|mov|mkv|m3u8|mpd)(?:[?#]|$)/i;
   const HLS_URL_RE = /\.m3u8(?:[?#]|$)/i;
   const DASH_URL_RE = /\.mpd(?:[?#]|$)/i;
+  const HUD_VIEWPORT_MARGIN = 12;
+  const HUD_VIDEO_GAP = 12;
+  const PLAYER_CONTROL_SELECTORS = [
+    ".vjs-control-bar",
+    ".vp-controls",
+    ".vp-control-bar",
+    ".plyr__controls",
+    ".mejs-controls",
+    ".mejs__controls",
+    ".jw-controlbar",
+    ".fp-controls",
+    "[data-testid='player-controls']",
+    "[class*='ControlBar']",
+    "[class*='control-bar']"
+  ];
   const IS_ELOLMS = location.hostname === "elolms.ou.edu.vn";
   const IS_VIMEO = location.hostname === "player.vimeo.com";
 
@@ -25,6 +40,7 @@
   let scanTimer = 0;
   let saveTimer = 0;
   let hudVisibleTimer = 0;
+  let hudPositionFrame = 0;
   let toastTimer = 0;
   let lastPointerInVideoAt = 0;
   let applyingRate = false;
@@ -44,6 +60,8 @@
     document.addEventListener("pointermove", handlePointerMove, true);
     document.addEventListener("fullscreenchange", placeHudHost);
     document.addEventListener("keydown", handleKeyboard, true);
+    document.addEventListener("scroll", scheduleHudPosition, true);
+    window.addEventListener("resize", scheduleHudPosition, { passive: true });
 
     window.setInterval(() => {
       scanVideos();
@@ -100,6 +118,7 @@
     ["play", "pause", "loadedmetadata", "durationchange", "timeupdate"].forEach((eventName) => {
       video.addEventListener(eventName, () => {
         activeVideo = video;
+        scheduleHudPosition();
         updateTimeUi();
       });
     });
@@ -135,6 +154,7 @@
     if (!hud) createHud();
     hud.host.hidden = false;
     placeHudHost();
+    scheduleHudPosition();
     updateSpeedUi();
     updateTimeUi();
   }
@@ -171,6 +191,7 @@
     hud = {
       host,
       root,
+      bar: root.querySelector(".hud"),
       speed: root.querySelector('[data-role="hud-speed"]'),
       speedButton: root.querySelector('[data-hud-action="speed-menu"]'),
       toast: root.querySelector('[data-role="toast"]')
@@ -293,6 +314,7 @@
     hud.root.querySelector(".hud-time").textContent = video
       ? `${formatTime(video.currentTime || 0)} / ${Number.isFinite(video.duration) ? formatTime(video.duration) : "--:--"}`
       : "--:--";
+    scheduleHudPosition();
   }
 
   function handlePointerMove(event) {
@@ -301,6 +323,7 @@
 
     if (document.fullscreenElement || pointInsideElement(event.clientX, event.clientY, video)) {
       lastPointerInVideoAt = Date.now();
+      scheduleHudPosition();
       showHudFor(1800);
     }
   }
@@ -308,6 +331,84 @@
   function pointInsideElement(x, y, element) {
     const rect = element.getBoundingClientRect();
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  function scheduleHudPosition() {
+    if (!hud?.host || hud.host.hidden || hudPositionFrame) return;
+
+    hudPositionFrame = window.requestAnimationFrame(() => {
+      hudPositionFrame = 0;
+      positionHud();
+    });
+  }
+
+  function positionHud() {
+    if (!hud?.host || hud.host.hidden || !hud.bar) return;
+
+    const video = chooseVideo();
+    if (!video) return;
+
+    const videoRect = video.getBoundingClientRect();
+    const hudRect = hud.bar.getBoundingClientRect();
+    const hudWidth = hudRect.width || 370;
+    const hudHeight = hudRect.height || 50;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const margin = HUD_VIEWPORT_MARGIN;
+    const maxHudWidth = Math.max(220, Math.min(viewportWidth - margin * 2, videoRect.width - margin * 2));
+
+    hud.host.style.setProperty("--hud-max-width", `${Math.round(maxHudWidth)}px`);
+
+    if (videoRect.width <= 0 || videoRect.height <= 0) {
+      placeHudInViewportCenter(hudWidth, hudHeight);
+      return;
+    }
+
+    const visibleLeft = clamp(videoRect.left, 0, viewportWidth);
+    const visibleRight = clamp(videoRect.right, 0, viewportWidth);
+    const visibleTop = clamp(videoRect.top, 0, viewportHeight);
+    const visibleBottom = clamp(videoRect.bottom, 0, viewportHeight);
+    const visibleWidth = visibleRight - visibleLeft;
+    const visibleHeight = visibleBottom - visibleTop;
+
+    if (visibleWidth < 80 || visibleHeight < 36) {
+      placeHudInViewportCenter(hudWidth, hudHeight);
+      return;
+    }
+
+    const controlsRect = getVisiblePlayerControlsRect(video);
+    const controlsTop = controlsRect
+      ? clamp(controlsRect.top, visibleTop, visibleBottom)
+      : null;
+    const desiredBottom = (controlsTop ?? visibleBottom) - HUD_VIDEO_GAP;
+    const minTop = Math.min(visibleTop + HUD_VIDEO_GAP, Math.max(margin, viewportHeight - hudHeight - margin));
+    const maxTop = Math.max(margin, viewportHeight - hudHeight - margin);
+    const top = clamp(desiredBottom - hudHeight, minTop, maxTop);
+    const fittedHudWidth = Math.min(hudWidth, viewportWidth - margin * 2);
+    const halfHud = fittedHudWidth / 2;
+    const left = clamp(
+      (visibleLeft + visibleRight) / 2,
+      margin + halfHud,
+      Math.max(margin + halfHud, viewportWidth - margin - halfHud)
+    );
+
+    hud.host.style.setProperty("--hud-left", `${Math.round(left)}px`);
+    hud.host.style.setProperty("--hud-top", `${Math.round(top)}px`);
+  }
+
+  function placeHudInViewportCenter(hudWidth, hudHeight) {
+    const margin = HUD_VIEWPORT_MARGIN;
+    const fittedHudWidth = Math.min(hudWidth, window.innerWidth - margin * 2);
+    const halfHud = fittedHudWidth / 2;
+    const left = clamp(
+      window.innerWidth / 2,
+      margin + halfHud,
+      Math.max(margin + halfHud, window.innerWidth - margin - halfHud)
+    );
+    const top = Math.max(margin, window.innerHeight - hudHeight - 18);
+
+    hud.host.style.setProperty("--hud-left", `${Math.round(left)}px`);
+    hud.host.style.setProperty("--hud-top", `${Math.round(top)}px`);
   }
 
   function placeHudHost() {
@@ -324,6 +425,7 @@
     }
 
     hud.host.classList.toggle("is-fullscreen", Boolean(fullscreenElement));
+    scheduleHudPosition();
     if (fullscreenElement) showHudFor(2200);
   }
 
@@ -332,6 +434,7 @@
 
     const nativeVisibility = getPlayerControlsVisibility();
     if (nativeVisibility === true) {
+      positionHud();
       showHudFor(0);
       return;
     }
@@ -342,26 +445,42 @@
   }
 
   function getPlayerControlsVisibility() {
-    const selectors = [
-      ".vp-controls",
-      ".vp-control-bar",
-      "[data-testid='player-controls']",
-      "[class*='ControlBar']",
-      "[class*='control-bar']",
-      "[class*='controls']"
-    ];
-
-    const candidates = selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
-    const controls = candidates.find((element) => isLikelyPlayerControls(element));
-    return controls ? isElementVisible(controls) : undefined;
+    const controls = getVisiblePlayerControlsRect(chooseVideo());
+    return controls ? true : undefined;
   }
 
-  function isLikelyPlayerControls(element) {
+  function getVisiblePlayerControlsRect(video) {
+    const videoRect = video?.getBoundingClientRect();
+    const candidates = PLAYER_CONTROL_SELECTORS.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
+    const controls = candidates
+      .filter((element) => isLikelyPlayerControls(element, videoRect) && isElementVisible(element))
+      .sort((a, b) => {
+        const aRect = a.getBoundingClientRect();
+        const bRect = b.getBoundingClientRect();
+        const aDistance = videoRect ? Math.abs(videoRect.bottom - aRect.bottom) : 0;
+        const bDistance = videoRect ? Math.abs(videoRect.bottom - bRect.bottom) : 0;
+        return aDistance - bDistance || bRect.width - aRect.width;
+      })[0];
+
+    return controls?.getBoundingClientRect() || null;
+  }
+
+  function isLikelyPlayerControls(element, videoRect) {
     if (!element || element === hud?.host || hud?.host?.contains(element)) return false;
 
     const rect = element.getBoundingClientRect();
-    if (rect.width < 160 || rect.height < 24) return false;
-    if (rect.bottom < window.innerHeight * 0.58) return false;
+    if (rect.width < 160 || rect.height < 18 || rect.height > 120) return false;
+
+    if (videoRect) {
+      const overlapsVideo = rect.right > videoRect.left
+        && rect.left < videoRect.right
+        && rect.bottom > videoRect.top
+        && rect.top < videoRect.bottom + 120;
+      const nearVideoBottom = rect.bottom >= videoRect.top + Math.min(80, videoRect.height * 0.25);
+      if (!overlapsVideo || !nearVideoBottom) return false;
+    } else if (rect.bottom < window.innerHeight * 0.58) {
+      return false;
+    }
 
     const marker = `${element.className || ""} ${element.id || ""}`.toLowerCase();
     if (marker.includes("elolms-video-tools")) return false;
@@ -386,6 +505,7 @@
   function showHudFor(duration = 1700) {
     if (!hud?.host || hud.host.hidden) return;
 
+    positionHud();
     hud.host.classList.add("is-visible");
     window.clearTimeout(hudVisibleTimer);
 
@@ -723,10 +843,9 @@
     return `
       :host { all: initial; color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
       * { box-sizing: border-box; font-family: inherit; letter-spacing: 0; }
-      .hud { position: fixed; left: 50%; bottom: 18px; z-index: 2147483647; display: inline-flex; align-items: center; gap: 6px; max-width: calc(100vw - 24px); padding: 7px; border: 1px solid rgba(27,39,56,0.14); border-radius: 10px; background: rgba(255,255,255,0.92); color: #172033; box-shadow: none; backdrop-filter: blur(16px) saturate(160%); transform: translateX(-50%) translateY(8px); opacity: 0; pointer-events: none; transition: opacity 150ms ease, transform 150ms ease; }
+      .hud { position: fixed; left: var(--hud-left, 50%); top: var(--hud-top, calc(100vh - 68px)); z-index: 2147483647; display: inline-flex; align-items: center; gap: 6px; max-width: min(var(--hud-max-width, calc(100vw - 24px)), calc(100vw - 24px)); padding: 7px; border: 1px solid rgba(27,39,56,0.14); border-radius: 10px; background: rgba(255,255,255,0.92); color: #172033; box-shadow: none; backdrop-filter: blur(16px) saturate(160%); transform: translateX(-50%) translateY(8px); opacity: 0; pointer-events: none; transition: opacity 150ms ease, transform 150ms ease, left 120ms ease, top 120ms ease; }
       :host(.is-visible) .hud,
       :host(.menu-open) .hud { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
-      :host(.is-fullscreen) .hud { bottom: 72px; }
       .hud:hover, .hud:focus-within { opacity: 1; }
       .hud-logo { display: inline-grid; place-items: center; width: 28px; height: 28px; color: ${BRAND}; }
       .hud-logo svg { width: 18px; height: 18px; }
