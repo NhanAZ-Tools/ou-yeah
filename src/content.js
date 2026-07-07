@@ -45,6 +45,7 @@
   let lastPointerInVideoAt = 0;
   let applyingRate = false;
   let activeDownloadJobId = "";
+  let nativeControlsHidden = false;
   const registeredVideos = new WeakSet();
 
   init();
@@ -168,6 +169,7 @@
       <style>${hudCss()}</style>
       <div class="hud" role="group" aria-label="Điều khiển nhanh video">
         <span class="hud-logo">${toolLogo()}</span>
+        <span class="hud-divider"></span>
         <button type="button" data-hud-action="backward" title="Alt + ←">${icon("rewind")}<span>-${SKIP_SECONDS}s</span></button>
         <div class="hud-speed-wrap">
           <button class="speed" type="button" data-hud-action="speed-menu" title="Chọn tốc độ phát" aria-haspopup="listbox" aria-expanded="false">
@@ -181,7 +183,9 @@
           </div>
         </div>
         <button type="button" data-hud-action="forward" title="Alt + →"><span>+${SKIP_SECONDS}s</span>${icon("forward")}</button>
+        <span class="hud-divider"></span>
         <button class="icon-only" type="button" data-hud-action="download" title="Tải video" aria-label="Tải video">${icon("download")}</button>
+        <span class="hud-divider"></span>
         <span class="hud-time">--:--</span>
         <span class="toast" data-role="toast"></span>
       </div>
@@ -325,12 +329,7 @@
       lastPointerInVideoAt = Date.now();
       scheduleHudPosition();
 
-      const nativeVisibility = getPlayerControlsVisibility();
-      if (nativeVisibility === true) {
-        showHudFor(0);
-      } else if (nativeVisibility === false) {
-        hideHud(true);
-      } else {
+      if (!nativeControlsHidden) {
         showHudFor(1800);
       }
     }
@@ -384,11 +383,8 @@
       return;
     }
 
-    const controlsRect = getVisiblePlayerControlsRect(video);
-    const controlsTop = controlsRect
-      ? clamp(controlsRect.top, visibleTop, visibleBottom)
-      : null;
-    const desiredBottom = (controlsTop ?? visibleBottom) - HUD_VIDEO_GAP;
+    const controlsOffset = 56;
+    const desiredBottom = visibleBottom - controlsOffset;
     const minTop = Math.min(visibleTop + HUD_VIDEO_GAP, Math.max(margin, viewportHeight - hudHeight - margin));
     const maxTop = Math.max(margin, viewportHeight - hudHeight - margin);
     const top = clamp(desiredBottom - hudHeight, minTop, maxTop);
@@ -432,9 +428,14 @@
       target.appendChild(hud.host);
     }
 
-    hud.host.classList.toggle("is-fullscreen", Boolean(fullscreenElement));
+    const wasFullscreen = hud.host.classList.contains("is-fullscreen");
+    const isFullscreen = Boolean(fullscreenElement);
+    hud.host.classList.toggle("is-fullscreen", isFullscreen);
     scheduleHudPosition();
-    if (fullscreenElement) showHudFor(2200);
+    
+    if (isFullscreen && !wasFullscreen && !nativeControlsHidden) {
+      showHudFor(2200);
+    }
   }
 
   function syncHudWithPlayerControls() {
@@ -442,16 +443,19 @@
 
     const nativeVisibility = getPlayerControlsVisibility();
     if (nativeVisibility === true) {
+      nativeControlsHidden = false;
       positionHud();
       showHudFor(0);
       return;
     }
 
     if (nativeVisibility === false) {
-      hideHud(true);
+      nativeControlsHidden = true;
+      hideHud();
       return;
     }
 
+    nativeControlsHidden = false;
     if (Date.now() - lastPointerInVideoAt > 1800) {
       hideHud();
     }
@@ -577,8 +581,11 @@
   }
 
   function hideHud(force = false) {
-    if (!hud?.host || (!force && hud.host.matches(":hover")) || hud.host.classList.contains("menu-open")) return;
+    if (!hud?.host || hud.host.classList.contains("menu-open")) return;
+    if (hud.host.matches(":hover")) return;
     hud.host.classList.remove("is-visible");
+    const focused = hud.root.activeElement;
+    if (focused) focused.blur();
   }
 
   function toggleSpeedMenu() {
@@ -897,34 +904,360 @@
 
   function hudCss() {
     return `
-      :host { all: initial; color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
-      * { box-sizing: border-box; font-family: inherit; letter-spacing: 0; }
-      .hud { position: fixed; left: var(--hud-left, 50%); top: var(--hud-top, calc(100vh - 68px)); z-index: 2147483647; display: inline-flex; align-items: center; gap: 6px; max-width: min(var(--hud-max-width, calc(100vw - 24px)), calc(100vw - 24px)); padding: 7px; border: 1px solid rgba(27,39,56,0.14); border-radius: 10px; background: rgba(255,255,255,0.92); color: #172033; box-shadow: none; backdrop-filter: blur(16px) saturate(160%); transform: translateX(-50%) translateY(8px); opacity: 0; pointer-events: none; transition: opacity 150ms ease, transform 150ms ease, left 120ms ease, top 120ms ease; }
+      @keyframes hudSlideIn {
+        from { opacity: 0; transform: translateX(-50%) translateY(12px) scale(0.96); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+      }
+      @keyframes menuItemReveal {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes toastPop {
+        0% { opacity: 0; transform: translate(-50%, 8px) scale(0.92); }
+        60% { transform: translate(-50%, -2px) scale(1.02); }
+        100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      }
+      @keyframes pulseGlow {
+        0%, 100% { box-shadow: 0 0 8px rgba(54,89,162,0.15); }
+        50% { box-shadow: 0 0 16px rgba(54,89,162,0.35); }
+      }
+      @keyframes logoSpin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes shimmer {
+        0% { background-position: -200% center; }
+        100% { background-position: 200% center; }
+      }
+      :host {
+        all: initial;
+        color-scheme: dark;
+        font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+        --brand: ${BRAND};
+        --brand-light: #4a7ae8;
+        --brand-glow: rgba(54,89,162,0.4);
+        --surface: rgba(15,17,26,0.82);
+        --surface-hover: rgba(25,28,42,0.9);
+        --surface-elevated: rgba(22,25,40,0.92);
+        --border: rgba(255,255,255,0.06);
+        --border-accent: rgba(74,122,232,0.25);
+        --text-primary: rgba(255,255,255,0.95);
+        --text-secondary: rgba(255,255,255,0.55);
+        --text-muted: rgba(255,255,255,0.35);
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+      }
+      * { box-sizing: border-box; font-family: inherit; letter-spacing: -0.01em; }
+
+      /* ─── Main HUD Bar ─── */
+      .hud {
+        position: fixed;
+        left: var(--hud-left, 50%);
+        top: var(--hud-top, calc(100vh - 68px));
+        z-index: 2147483647;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        max-width: min(var(--hud-max-width, calc(100vw - 24px)), calc(100vw - 24px));
+        padding: 5px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        color: var(--text-primary);
+        box-shadow:
+          0 8px 32px rgba(0,0,0,0.4),
+          0 2px 8px rgba(0,0,0,0.3),
+          inset 0 1px 0 rgba(255,255,255,0.04);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        transform: translateX(-50%) translateY(10px);
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 220ms cubic-bezier(0.16,1,0.3,1),
+          transform 220ms cubic-bezier(0.16,1,0.3,1),
+          left 150ms cubic-bezier(0.16,1,0.3,1),
+          top 150ms cubic-bezier(0.16,1,0.3,1),
+          box-shadow 300ms ease;
+      }
       :host(.is-visible) .hud,
-      :host(.menu-open) .hud { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
-      .hud:hover, .hud:focus-within { opacity: 1; }
-      .hud-logo { display: inline-grid; place-items: center; width: 28px; height: 28px; color: ${BRAND}; }
-      .hud-logo svg { width: 18px; height: 18px; }
-      button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 34px; min-width: 48px; padding: 0 10px; border: 1px solid rgba(27,39,56,0.1); border-radius: 8px; background: rgba(245,247,251,0.95); color: #172033; font-size: 13px; font-weight: 800; cursor: pointer; user-select: none; transition: background 120ms ease, transform 120ms ease, border-color 120ms ease; }
-      button:hover { background: rgba(54,89,162,0.08); border-color: rgba(54,89,162,0.22); }
-      button:active { transform: scale(0.96); }
-      button:focus-visible { outline: 2px solid rgba(54,89,162,0.35); outline-offset: 2px; }
+      :host(.menu-open) .hud {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateX(-50%) translateY(0);
+      }
+      .hud:hover {
+        opacity: 1;
+        border-color: var(--border-accent);
+        box-shadow:
+          0 8px 32px rgba(0,0,0,0.5),
+          0 2px 8px rgba(0,0,0,0.3),
+          0 0 20px var(--brand-glow),
+          inset 0 1px 0 rgba(255,255,255,0.06);
+      }
+      :host(.is-visible) .hud:focus-within { opacity: 1; }
+
+      /* ─── Logo ─── */
+      .hud-logo {
+        display: inline-grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: var(--radius-sm);
+        background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
+        color: #fff;
+        flex-shrink: 0;
+        transition: transform 300ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 300ms ease;
+      }
+      .hud-logo:hover {
+        transform: scale(1.1);
+        box-shadow: 0 0 12px var(--brand-glow);
+      }
+      .hud-logo:hover svg {
+        animation: logoSpin 600ms cubic-bezier(0.34,1.56,0.64,1) forwards;
+      }
+      .hud-logo svg { width: 16px; height: 16px; transition: transform 200ms ease; }
+
+      /* ─── Divider ─── */
+      .hud-divider {
+        width: 1px;
+        height: 20px;
+        background: linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent);
+        flex-shrink: 0;
+      }
+
+      /* ─── Buttons ─── */
+      button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        height: 32px;
+        min-width: 44px;
+        padding: 0 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: rgba(255,255,255,0.04);
+        color: var(--text-primary);
+        font-size: 12px;
+        font-weight: 650;
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        overflow: hidden;
+        transition:
+          background 180ms ease,
+          transform 120ms cubic-bezier(0.34,1.56,0.64,1),
+          border-color 180ms ease,
+          box-shadow 180ms ease,
+          color 180ms ease;
+      }
+      button::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 60%);
+        opacity: 0;
+        transition: opacity 180ms ease;
+        pointer-events: none;
+      }
+      button:hover {
+        background: rgba(255,255,255,0.08);
+        border-color: rgba(255,255,255,0.12);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      }
+      button:hover::before { opacity: 1; }
+      button:active {
+        transform: scale(0.94);
+        background: rgba(255,255,255,0.06);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--brand-light);
+        outline-offset: 2px;
+      }
+
+      /* ─── Speed wrap & menu ─── */
       .hud-speed-wrap { position: relative; }
-      .speed { min-width: 66px; border-color: rgba(54,89,162,0.24); background: ${BRAND}; color: #fff; }
-      .speed svg { width: 14px; height: 14px; }
-      .speed:hover { background: #2f4d8d; color: #fff; }
-      .hud-menu { position: absolute; left: 50%; bottom: calc(100% + 8px); display: grid; grid-template-columns: repeat(2, minmax(58px, 1fr)); gap: 4px; min-width: 132px; padding: 6px; border: 1px solid rgba(27,39,56,0.14); border-radius: 10px; background: rgba(255,255,255,0.96); box-shadow: none; backdrop-filter: blur(14px) saturate(150%); opacity: 0; pointer-events: none; transform: translate(-50%, 6px) scale(0.98); transition: opacity 130ms ease, transform 130ms ease; }
-      :host(.menu-open) .hud-menu { opacity: 1; pointer-events: auto; transform: translate(-50%, 0) scale(1); }
-      .hud-menu button { min-width: 0; height: 32px; border: 0; border-radius: 7px; background: transparent; color: #172033; font-size: 12px; }
-      .hud-menu button:hover,
-      .hud-menu button.is-selected { background: rgba(54,89,162,0.1); color: ${BRAND}; }
-      .icon-only { min-width: 34px; width: 34px; padding: 0; }
-      .hud-time { color: #516071; font-size: 12px; font-weight: 750; white-space: nowrap; padding: 0 5px; }
-      .toast { position: absolute; left: 50%; bottom: calc(100% + 8px); padding: 6px 10px; border: 1px solid rgba(27,39,56,0.14); border-radius: 8px; background: rgba(255,255,255,0.96); color: #172033; box-shadow: none; font-size: 12px; font-weight: 800; white-space: nowrap; opacity: 0; transform: translate(-50%, 6px); pointer-events: none; transition: opacity 140ms ease, transform 140ms ease; }
-      .toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
-      .toast.is-error { border-color: rgba(217,48,37,0.24); background: #fff2f0; color: #d93025; }
-      svg { display: block; width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+      .speed {
+        min-width: 64px;
+        border: 1px solid transparent;
+        background: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
+        color: #fff;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        box-shadow: 0 2px 10px rgba(54,89,162,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+      }
+      .speed::before {
+        background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
+        opacity: 1;
+      }
+      .speed svg { width: 13px; height: 13px; transition: transform 200ms cubic-bezier(0.34,1.56,0.64,1); }
+      :host(.menu-open) .speed svg { transform: rotate(180deg); }
+      .speed:hover {
+        background: linear-gradient(135deg, #2f4d8d 0%, #3b6bd4 100%);
+        box-shadow: 0 4px 16px rgba(54,89,162,0.5), inset 0 1px 0 rgba(255,255,255,0.15);
+        border-color: transparent;
+        color: #fff;
+      }
+      :host(.menu-open) .speed {
+        box-shadow: 0 4px 20px rgba(54,89,162,0.5), inset 0 1px 0 rgba(255,255,255,0.15);
+      }
+
+      /* ─── Speed Menu ─── */
+      .hud-menu {
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 10px);
+        display: grid;
+        grid-template-columns: repeat(2, minmax(56px, 1fr));
+        gap: 3px;
+        min-width: 136px;
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-elevated);
+        box-shadow:
+          0 12px 40px rgba(0,0,0,0.5),
+          0 4px 12px rgba(0,0,0,0.3),
+          inset 0 1px 0 rgba(255,255,255,0.04);
+        backdrop-filter: blur(20px) saturate(170%);
+        -webkit-backdrop-filter: blur(20px) saturate(170%);
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, 8px) scale(0.95);
+        transform-origin: bottom center;
+        transition:
+          opacity 200ms cubic-bezier(0.16,1,0.3,1),
+          transform 200ms cubic-bezier(0.16,1,0.3,1);
+      }
+      :host(.menu-open) .hud-menu {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate(-50%, 0) scale(1);
+      }
+      :host(.menu-open) .hud-menu button {
+        animation: menuItemReveal 200ms cubic-bezier(0.16,1,0.3,1) backwards;
+      }
+      :host(.menu-open) .hud-menu button:nth-child(1) { animation-delay: 20ms; }
+      :host(.menu-open) .hud-menu button:nth-child(2) { animation-delay: 40ms; }
+      :host(.menu-open) .hud-menu button:nth-child(3) { animation-delay: 60ms; }
+      :host(.menu-open) .hud-menu button:nth-child(4) { animation-delay: 80ms; }
+      :host(.menu-open) .hud-menu button:nth-child(5) { animation-delay: 100ms; }
+      :host(.menu-open) .hud-menu button:nth-child(6) { animation-delay: 120ms; }
+      :host(.menu-open) .hud-menu button:nth-child(7) { animation-delay: 140ms; }
+      :host(.menu-open) .hud-menu button:nth-child(8) { animation-delay: 160ms; }
+      :host(.menu-open) .hud-menu button:nth-child(9) { animation-delay: 180ms; }
+      :host(.menu-open) .hud-menu button:nth-child(10) { animation-delay: 200ms; }
+      .hud-menu button {
+        min-width: 0;
+        height: 30px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 600;
+        transition: background 150ms ease, color 150ms ease, transform 120ms ease;
+      }
+      .hud-menu button::before { display: none; }
+      .hud-menu button:hover {
+        background: rgba(74,122,232,0.12);
+        color: var(--brand-light);
+        box-shadow: none;
+      }
+      .hud-menu button.is-selected {
+        background: linear-gradient(135deg, rgba(54,89,162,0.2), rgba(74,122,232,0.15));
+        color: var(--brand-light);
+        font-weight: 700;
+        box-shadow: inset 0 0 0 1px rgba(74,122,232,0.2);
+      }
+
+      /* ─── Download ─── */
+      .icon-only {
+        min-width: 32px;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+      }
+      .icon-only:hover {
+        color: var(--brand-light);
+        background: rgba(74,122,232,0.1);
+        border-color: var(--border-accent);
+      }
+
+      /* ─── Time ─── */
+      .hud-time {
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        padding: 0 6px;
+        letter-spacing: 0.03em;
+      }
+
+      /* ─── Toast ─── */
+      .toast {
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 10px);
+        padding: 6px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface-elevated);
+        color: var(--text-primary);
+        box-shadow:
+          0 8px 24px rgba(0,0,0,0.4),
+          inset 0 1px 0 rgba(255,255,255,0.04);
+        backdrop-filter: blur(16px) saturate(160%);
+        -webkit-backdrop-filter: blur(16px) saturate(160%);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+        opacity: 0;
+        transform: translate(-50%, 8px) scale(0.92);
+        pointer-events: none;
+        transition: opacity 200ms ease, transform 200ms cubic-bezier(0.16,1,0.3,1);
+      }
+      .toast.is-visible {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1);
+        animation: toastPop 280ms cubic-bezier(0.34,1.56,0.64,1);
+      }
+      .toast.is-error {
+        border-color: rgba(239,68,68,0.3);
+        background: rgba(239,68,68,0.12);
+        color: #f87171;
+        box-shadow:
+          0 8px 24px rgba(0,0,0,0.4),
+          0 0 12px rgba(239,68,68,0.15),
+          inset 0 1px 0 rgba(239,68,68,0.08);
+      }
+
+      /* ─── SVG ─── */
+      svg {
+        display: block;
+        width: 15px;
+        height: 15px;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+      }
       .hud-logo svg { stroke: none; fill: currentColor; }
+
+      /* ─── Fullscreen tweaks ─── */
+      :host(.is-fullscreen) .hud {
+        background: rgba(10,12,20,0.88);
+        box-shadow:
+          0 8px 40px rgba(0,0,0,0.6),
+          0 0 24px var(--brand-glow),
+          inset 0 1px 0 rgba(255,255,255,0.05);
+      }
     `;
   }
 })();
