@@ -445,14 +445,20 @@
   }
 
   function getPlayerControlsVisibility() {
-    const controls = getVisiblePlayerControlsRect(chooseVideo());
-    return controls ? true : undefined;
+    const video = chooseVideo();
+    const videoRect = video?.getBoundingClientRect();
+    const candidates = getPlayerControlCandidates()
+      .filter((element) => isPotentialPlayerControls(element, videoRect));
+
+    if (!candidates.length) return undefined;
+    if (candidates.some((element) => isLikelyPlayerControls(element, videoRect) && isElementVisible(element))) return true;
+
+    return false;
   }
 
   function getVisiblePlayerControlsRect(video) {
     const videoRect = video?.getBoundingClientRect();
-    const candidates = PLAYER_CONTROL_SELECTORS.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
-    const controls = candidates
+    const controls = getPlayerControlCandidates()
       .filter((element) => isLikelyPlayerControls(element, videoRect) && isElementVisible(element))
       .sort((a, b) => {
         const aRect = a.getBoundingClientRect();
@@ -463,6 +469,38 @@
       })[0];
 
     return controls?.getBoundingClientRect() || null;
+  }
+
+  function getPlayerControlCandidates() {
+    const elements = PLAYER_CONTROL_SELECTORS
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)));
+
+    return Array.from(new Set(elements));
+  }
+
+  function isPotentialPlayerControls(element, videoRect) {
+    if (!element || element === hud?.host || hud?.host?.contains(element)) return false;
+
+    const marker = `${element.className || ""} ${element.id || ""}`.toLowerCase();
+    if (marker.includes("elolms-video-tools")) return false;
+    if (!element.querySelector("button, [role='button'], input, progress, [aria-label]")) return false;
+    if (!videoRect) return true;
+
+    const rect = usableControlRect(element);
+    if (rect.width <= 0 || rect.height <= 0) return true;
+
+    return rect.right > videoRect.left
+      && rect.left < videoRect.right
+      && rect.bottom > videoRect.top
+      && rect.top < videoRect.bottom + 120;
+  }
+
+  function usableControlRect(element) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) return rect;
+
+    const container = element.closest(".video-js, .vjs, .vp-player, .plyr, .mejs-container, .jwplayer, .flowplayer");
+    return container?.getBoundingClientRect() || rect;
   }
 
   function isLikelyPlayerControls(element, videoRect) {
