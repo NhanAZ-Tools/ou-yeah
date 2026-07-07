@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "ELOLMS Video Tools",
+  "description": "Điều khiển tốc độ, tua nhanh/tua ngược và tải video bài giảng trên ELOLMS OU.",
+  "version": "1.0.1",
+  "minimum_chrome_version": "109",
+  "icons": {
+    "16": "src/icon-16.png",
+    "32": "src/icon-32.png",
+    "48": "src/icon-48.png",
+    "128": "src/icon-128.png"
+  },
+  "action": {
+    "default_title": "ELOLMS Video Tools",
+    "default_icon": {
+      "16": "src/icon-16.png",
+      "32": "src/icon-32.png",
+      "48": "src/icon-48.png",
+      "128": "src/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://elolms.ou.edu.vn/*",
+        "https://player.vimeo.com/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "offscreen",
+    "scripting",
+    "storage",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}
