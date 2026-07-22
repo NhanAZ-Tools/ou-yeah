@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "ELOLMS Video Tools",
-  "description": "Điều khiển tốc độ, tua nhanh/tua ngược và tải video bài giảng trên ELOLMS OU.",
-  "version": "1.0.5",
+  "name": "OU Yeah!",
+  "description": "Tiện ích học tập cho ELOLMS và Thư Quán OU: điều khiển, tải video bài giảng và tạo sách PDF.",
+  "version": "2.0.0",
   "minimum_chrome_version": "109",
   "icons": {
     "16": "src/icon-16.png",
@@ -11,7 +11,7 @@
     "128": "src/icon-128.png"
   },
   "action": {
-    "default_title": "ELOLMS Video Tools",
+    "default_title": "OU Yeah!",
     "default_icon": {
       "16": "src/icon-16.png",
       "32": "src/icon-32.png",
@@ -26,13 +26,26 @@
     {
       "matches": [
         "https://elolms.ou.edu.vn/*",
-        "https://player.vimeo.com/*"
+        "https://player.vimeo.com/*",
+        "https://thuquan.ou.edu.vn/doc-truc-tuyen/sach/*"
       ],
       "js": [
         "src/content.js"
       ],
       "run_at": "document_idle",
       "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/icons/*.svg"
+      ],
+      "matches": [
+        "https://elolms.ou.edu.vn/*",
+        "https://player.vimeo.com/*",
+        "https://thuquan.ou.edu.vn/*"
+      ]
     }
   ],
   "permissions": [

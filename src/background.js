@@ -33,17 +33,18 @@ function rememberMedia(tabId, url, source) {
 
 chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
-    if (!isFromSupportedPage(details)) return;
+    if (!isFromSupportedPage(details)) return {};
     if (MEDIA_URL_RE.test(details.url)) {
       rememberMedia(details.tabId, details.url, `network:${details.type}`);
     }
+    return {};
   },
   { urls: ["<all_urls>"] }
 );
 
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
-    if (!isFromSupportedPage(details)) return;
+    if (!isFromSupportedPage(details)) return {};
 
     const contentType = (details.responseHeaders || [])
       .find((header) => header.name.toLowerCase() === "content-type")
@@ -52,6 +53,7 @@ chrome.webRequest.onHeadersReceived.addListener(
     if (MEDIA_URL_RE.test(details.url) || MEDIA_MIME_RE.test(contentType)) {
       rememberMedia(details.tabId, details.url, `headers:${contentType || details.type}`);
     }
+    return {};
   },
   { urls: ["<all_urls>"] },
   ["responseHeaders"]
@@ -61,11 +63,15 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabMedia.delete(tabId);
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
+chrome.action.onClicked.addListener((tab) => {
+  handleActionClick(tab).catch(() => {});
+});
+
+async function handleActionClick(tab) {
   if (!tab?.id) return;
 
   try {
-    await chrome.tabs.sendMessage(tab.id, { type: "elolms-pulse-hud" });
+    await chrome.tabs.sendMessage(tab.id, { type: "ou-yeah-pulse-hud" });
   } catch {
     try {
       await chrome.scripting.executeScript({
@@ -76,12 +82,12 @@ chrome.action.onClicked.addListener(async (tab) => {
       // The active page may not allow script injection. Nothing useful to do here.
     }
   }
-});
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
 
-  if (message.type === "elolms-get-media-candidates") {
+  if (message.type === "ou-yeah-get-media-candidates") {
     const tabId = sender.tab?.id;
     sendResponse({
       ok: true,
@@ -90,24 +96,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  if (message.type === "elolms-download-media") {
-    handleDownloadRequest(message, sender).then(sendResponse);
+  if (message.type === "ou-yeah-download-media") {
+    respondToAsyncRequest(handleDownloadRequest(message, sender), sendResponse);
     return true;
   }
 
-  if (message.type === "elolms-hls-progress") {
+  if (message.type === "ou-yeah-download-book-pdf") {
+    respondToAsyncRequest(handleBookPdfRequest(message, sender), sendResponse);
+    return true;
+  }
+
+  if (message.type === "ou-yeah-hls-progress") {
     forwardProgress(message);
     return false;
   }
 
-  if (message.type === "elolms-hls-ready") {
+  if (message.type === "ou-yeah-hls-ready") {
     handleHlsReady(message);
     return false;
   }
 
-  if (message.type === "elolms-hls-error") {
+  if (message.type === "ou-yeah-hls-error") {
     forwardProgress({
-      type: "elolms-hls-progress",
+      type: "ou-yeah-hls-progress",
       jobId: message.jobId,
       status: "error",
       label: message.error || "Không thể tải luồng video."
@@ -116,8 +127,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "ou-yeah-book-progress") {
+    forwardBookProgress(message);
+    return false;
+  }
+
+  if (message.type === "ou-yeah-book-pdf-ready") {
+    handleBookPdfReady(message);
+    return false;
+  }
+
+  if (message.type === "ou-yeah-book-pdf-error") {
+    forwardBookProgress({
+      jobId: message.jobId,
+      status: "error",
+      label: message.error || "Không thể tạo tệp PDF."
+    });
+    downloadJobs.delete(message.jobId);
+    return false;
+  }
+
   return false;
 });
+
+function respondToAsyncRequest(pending, sendResponse) {
+  pending
+    .then((response) => {
+      try {
+        sendResponse(response);
+      } catch {
+        // The sender can disappear while the async job is starting.
+      }
+    })
+    .catch((error) => {
+      try {
+        sendResponse({ ok: false, error: readableError(error) });
+      } catch {
+        // The message channel was already closed.
+      }
+    });
+}
 
 async function handleDownloadRequest(message, sender) {
   const url = normalizeUrl(message.url);
@@ -139,7 +188,7 @@ async function handleDownloadRequest(message, sender) {
     try {
       await ensureOffscreenDocument();
       await chrome.runtime.sendMessage({
-        type: "elolms-download-hls",
+        type: "ou-yeah-download-hls",
         jobId,
         url,
         filename
@@ -152,6 +201,64 @@ async function handleDownloadRequest(message, sender) {
   }
 
   return directDownload(url, filename);
+}
+
+async function handleBookPdfRequest(message, sender) {
+  const book = normalizeBookConfig(message.book);
+  if (!book) {
+    return { ok: false, error: "Cấu hình sách không hợp lệ." };
+  }
+
+  const senderUrl = normalizeUrl(sender.url || sender.tab?.url);
+  if (!senderUrl || new URL(senderUrl).hostname !== "thuquan.ou.edu.vn") {
+    return { ok: false, error: "Yêu cầu tải sách không đến từ Thư Quán OU." };
+  }
+
+  const jobId = crypto.randomUUID();
+  const filename = ensurePdfFilename(message.filename || book.title);
+  downloadJobs.set(jobId, {
+    tabId: sender.tab?.id,
+    frameId: sender.frameId,
+    filename,
+    kind: "book"
+  });
+
+  try {
+    await ensureOffscreenDocument();
+    await chrome.runtime.sendMessage({
+      type: "ou-yeah-build-book-pdf",
+      jobId,
+      book,
+      filename
+    });
+    return { ok: true, mode: "book-pdf", jobId };
+  } catch (error) {
+    downloadJobs.delete(jobId);
+    return { ok: false, error: readableError(error) };
+  }
+}
+
+function normalizeBookConfig(rawBook) {
+  if (!rawBook || typeof rawBook !== "object") return null;
+
+  const documentId = Number(rawBook.documentId);
+  const totalPages = Number(rawBook.totalPages);
+  const zoom = Number(rawBook.zoom);
+  const signature = String(rawBook.signature || "");
+  const title = String(rawBook.title || `thu-quan-${documentId}`).trim();
+
+  if (!Number.isInteger(documentId) || documentId <= 0) return null;
+  if (!Number.isInteger(totalPages) || totalPages <= 0 || totalPages > 2000) return null;
+  if (!Number.isInteger(zoom) || zoom <= 0 || zoom > 20) return null;
+  if (!signature || signature.length > 256) return null;
+
+  return {
+    documentId,
+    totalPages,
+    zoom,
+    signature,
+    title: title.slice(0, 160) || `thu-quan-${documentId}`
+  };
 }
 
 function normalizeUrl(rawUrl) {
@@ -188,14 +295,17 @@ async function ensureOffscreenDocument() {
 
   if (!chrome.offscreen?.hasDocument) {
     const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_DOCUMENT);
-    const clientsList = await clients.matchAll();
+    const serviceWorkerGlobal = /** @type {ServiceWorkerGlobalScope} */ (
+      /** @type {unknown} */ (globalThis)
+    );
+    const clientsList = await serviceWorkerGlobal.clients.matchAll();
     if (clientsList.some((client) => client.url === offscreenUrl)) return;
   }
 
   await chrome.offscreen.createDocument({
     url: OFFSCREEN_DOCUMENT,
     reasons: ["BLOBS", "DOM_PARSER"],
-    justification: "Gom các segment HLS thành một tệp video có thể tải về."
+    justification: "Tạo tệp có thể tải về từ nội dung video hoặc các trang sách người dùng đang xem."
   });
 }
 
@@ -214,14 +324,14 @@ function handleHlsReady(message) {
       const error = chrome.runtime.lastError?.message;
       if (error) {
         forwardProgress({
-          type: "elolms-hls-progress",
+          type: "ou-yeah-hls-progress",
           jobId: message.jobId,
           status: "error",
           label: error
         });
       } else {
         forwardProgress({
-          type: "elolms-hls-progress",
+          type: "ou-yeah-hls-progress",
           jobId: message.jobId,
           status: "complete",
           label: "Đã gửi video sang Downloads.",
@@ -230,15 +340,57 @@ function handleHlsReady(message) {
       }
 
       setTimeout(() => {
-        chrome.runtime.sendMessage({
-          type: "elolms-revoke-object-url",
-          blobUrl: message.blobUrl
-        }).catch(() => {});
+        revokeOffscreenObjectUrl(message.blobUrl);
       }, 60_000);
 
       downloadJobs.delete(message.jobId);
     }
   );
+}
+
+function handleBookPdfReady(message) {
+  const job = downloadJobs.get(message.jobId);
+  if (!job || job.kind !== "book") return;
+
+  chrome.downloads.download(
+    {
+      url: message.blobUrl,
+      filename: ensurePdfFilename(message.filename || job.filename),
+      conflictAction: "uniquify",
+      saveAs: false
+    },
+    (downloadId) => {
+      const error = chrome.runtime.lastError?.message;
+      if (error) {
+        forwardBookProgress({
+          jobId: message.jobId,
+          status: "error",
+          label: error
+        });
+      } else {
+        forwardBookProgress({
+          jobId: message.jobId,
+          status: "complete",
+          label: "Đã gửi sách PDF sang Downloads.",
+          percent: 100,
+          downloadId
+        });
+      }
+
+      setTimeout(() => {
+        revokeOffscreenObjectUrl(message.blobUrl);
+      }, 60_000);
+
+      downloadJobs.delete(message.jobId);
+    }
+  );
+}
+
+function revokeOffscreenObjectUrl(blobUrl) {
+  chrome.runtime.sendMessage({
+    type: "ou-yeah-revoke-object-url",
+    blobUrl
+  }).catch(() => {});
 }
 
 function forwardProgress(message) {
@@ -248,7 +400,7 @@ function forwardProgress(message) {
   chrome.tabs.sendMessage(
     job.tabId,
     {
-      type: "elolms-download-progress",
+      type: "ou-yeah-download-progress",
       jobId: message.jobId,
       status: message.status,
       label: message.label,
@@ -260,7 +412,26 @@ function forwardProgress(message) {
   ).catch(() => {});
 }
 
-function filenameFromUrl(url, pageTitle = "elolms-video") {
+function forwardBookProgress(message) {
+  const job = downloadJobs.get(message.jobId);
+  if (!job?.tabId || job.kind !== "book") return;
+
+  chrome.tabs.sendMessage(
+    job.tabId,
+    {
+      type: "ou-yeah-book-progress",
+      jobId: message.jobId,
+      status: message.status,
+      label: message.label,
+      loaded: message.loaded,
+      total: message.total,
+      percent: message.percent
+    },
+    job.frameId == null ? undefined : { frameId: job.frameId }
+  ).catch(() => {});
+}
+
+function filenameFromUrl(url, pageTitle = "ou-yeah-video") {
   const parsed = new URL(url);
   const pathName = decodeURIComponent(parsed.pathname.split("/").pop() || "");
   const baseFromPath = pathName.replace(/\.(m3u8|mpd)(?:[?#].*)?$/i, "") || pageTitle;
@@ -276,11 +447,16 @@ function extensionFromPath(pathName) {
 }
 
 function sanitizeFilename(filename) {
-  const cleaned = String(filename || "elolms-video.mp4")
+  const cleaned = String(filename || "ou-yeah-video.mp4")
     .replace(/[\\/:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return cleaned.slice(0, 170) || "elolms-video.mp4";
+  return cleaned.slice(0, 170) || "ou-yeah-video.mp4";
+}
+
+function ensurePdfFilename(filename) {
+  const cleaned = sanitizeFilename(String(filename || "thu-quan-ou").replace(/\.pdf$/i, ""));
+  return `${cleaned || "thu-quan-ou"}.pdf`;
 }
 
 function readableError(error) {
