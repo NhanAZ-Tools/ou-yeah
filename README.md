@@ -39,6 +39,18 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
   - `Alt + →`: tua nhanh 5 giây
   - `Alt + ↑`: đổi tốc độ theo vòng preset
 
+## Tuyên bố từ chối trách nhiệm
+
+OU Yeah! là tiện ích được làm trước hết cho nhu cầu học tập cá nhân. Mình thấy nó hữu ích trong quá trình học nên chia sẻ lại cho người dùng tự cân nhắc sử dụng. Đây không phải tiện ích chính thức của Trường Đại học Mở TP. Hồ Chí Minh, ELOLMS, Thư Quán OU hay bất kỳ đơn vị liên quan nào.
+
+Tiện ích có các tính năng như tải video bài giảng khi trang cung cấp nguồn tải phù hợp, tạo PDF từ ảnh trang sách đang đọc trên Thư Quán OU và chỉnh sửa giao diện ELOLMS để dễ theo dõi hơn. Các tính năng này chỉ nên dùng cho mục đích học tập, lưu trữ và tra cứu cá nhân trong phạm vi bạn được phép truy cập.
+
+Người dùng tự chịu trách nhiệm về cách sử dụng tiện ích. Tác giả không khuyến khích, không hỗ trợ và không chịu trách nhiệm cho mọi hành vi sử dụng tiện ích để vi phạm nội quy nhà trường, điều khoản sử dụng của hệ thống, quyền sở hữu trí tuệ, bản quyền, quy định chia sẻ tài liệu, quy định bảo mật hoặc pháp luật hiện hành. Ví dụ: in lậu, phát tán lại sách/tài liệu, chia sẻ video bài giảng trái phép, dùng dữ liệu tải được cho mục đích thương mại hoặc bất kỳ hành vi vượt quá quyền truy cập hợp lệ của bạn.
+
+Do tiện ích có can thiệp giao diện website, có thể xảy ra lỗi hiển thị, lỗi thao tác, phân loại nhầm thông báo, ẩn/hiện sai nội dung, hoặc làm bạn bỏ sót thông báo học tập, lịch học, hạn nộp bài, cập nhật môn học và các thông tin quan trọng khác. Hãy luôn kiểm tra lại thông tin quan trọng trên giao diện gốc/chính thức của ELOLMS, Thư Quán OU hoặc các kênh thông báo chính thức của trường. Tác giả không chịu trách nhiệm cho thiệt hại, mất mát, trễ hạn, bỏ lỡ thông tin hoặc hậu quả phát sinh từ việc sử dụng tiện ích.
+
+Tiện ích không được thiết kế để vượt DRM, phá mã hóa, vượt kiểm soát truy cập hoặc né tránh các cơ chế bảo vệ của hệ thống.
+
 ## Lưu ý
 
 - Extension cần quyền `<all_urls>` để bắt link video nếu ELOLMS/Vimeo phát video từ CDN khác.
