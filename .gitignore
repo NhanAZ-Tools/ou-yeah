@@ -1,6 +1,8 @@
 *.zip
 *.crx
 *.pem
+*.sha256
+dist/
 node_modules/
 .DS_Store
 Thumbs.db

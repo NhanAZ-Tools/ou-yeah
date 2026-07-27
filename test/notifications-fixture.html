@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OU Yeah! - Notification fixture</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fff; color: #1f2937; font-family: Inter, "Segoe UI", Arial, sans-serif; }
+      #topofscroll { max-width: 1400px; margin: auto; padding: 24px; }
+      [data-region="notification-area"] { display: block; height: 500px; border: 1px solid #ddd; }
+      [data-region="control-area"] { display: inline-block; width: 300px; height: 498px; overflow: auto; vertical-align: top; }
+      [data-region="content-area"] { display: inline-block; width: calc(100% - 304px); height: 500px; vertical-align: top; }
+      [data-region="notification-content-item-container"] { border-bottom: 1px solid #ddd; }
+      [data-region="notification-content-item-container"] > div { padding: 12px; }
+      .content-item-body { display: flex; }
+      .notification-image { width: 28px; }
+      .content-item-footer { padding-left: 28px; }
+      [data-region="content-area"] > * { padding: 16px; }
+    </style>
+    <link rel="stylesheet" href="../src/notifications.css">
+  </head>
+  <body class="path-message path-message-output path-message-output-popup">
+    <div id="topofscroll">
+      <header id="page-header">Nguyễn Thành Nhân</header>
+      <div id="page-content">
+        <div id="region-main-box">
+          <section id="region-main">
+            <div role="main">
+              <h2>Các thông báo</h2>
+              <div class="notification-area show-content-area" data-region="notification-area">
+                <div class="control-area" data-region="control-area">
+                  <div class="header"></div>
+                  <div class="content" data-region="content">
+                    <div class="content-item-container notification selected unread" data-id="1" data-region="notification-content-item-container" role="listitem">
+                      <div tabindex="0" aria-label="Thông báo chưa đọc: Bạn đã nộp bài làm cho Bài tập lớn - Phần 2.">
+                        <div class="content-item-body"><div class="notification-image"><i class="icon">◆</i></div><div class="notification-message">Bạn đã nộp bài làm cho Bài tập lớn - Phần 2.</div></div>
+                        <div class="content-item-footer"><div class="timestamp">cách đây 6 phút</div></div>
+                      </div>
+                    </div>
+                    <div class="content-item-container notification unread" data-id="2" data-region="notification-content-item-container" role="listitem">
+                      <div tabindex="0" aria-label="Thông báo chưa đọc: EDUC02062-2531: Trả lời: THÔNG BÁO NHÓM 7">
+                        <div class="content-item-body"><div class="notification-image"><i class="icon">◆</i></div><div class="notification-message">EDUC02062-2531: Trả lời: THÔNG BÁO NHÓM 7</div></div>
+                        <div class="content-item-footer"><div class="timestamp">cách đây 19 phút</div></div>
+                      </div>
+                    </div>
+                    <div class="content-item-container notification" data-id="3" data-region="notification-content-item-container" role="listitem">
+                      <div tabindex="0" aria-label="Thông báo thời gian tổ chức Video conference 3">
+                        <div class="content-item-body"><div class="notification-image"><i class="icon">◆</i></div><div class="notification-message">Thông báo thời gian tổ chức Video conference 3 (COSC04052-2531 Lập trình hướng đối tượng - 2531)</div></div>
+                        <div class="content-item-footer"><div class="timestamp">cách đây 1 giờ 32 phút</div></div>
+                      </div>
+                    </div>
+                    <div class="content-item-container notification" data-id="4" data-region="notification-content-item-container" role="listitem">
+                      <div tabindex="0" aria-label="COSC04032-2531: THÔNG BÁO RIÊNG CỦA THẦY KIỆT">
+                        <div class="content-item-body"><div class="notification-image"><i class="icon">◆</i></div><div class="notification-message">COSC04032-2531: THÔNG BÁO RIÊNG CỦA THẦY KIỆT</div></div>
+                        <div class="content-item-footer"><div class="timestamp">cách đây 5 giờ 30 phút</div></div>
+                      </div>
+                    </div>
+                    <div class="content-item-container notification" data-id="5" data-region="notification-content-item-container" role="listitem">
+                      <div tabindex="0" aria-label="EDUC02062-2531: Trả lời: Chủ đề 2">
+                        <div class="content-item-body"><div class="notification-image"><i class="icon">◆</i></div><div class="notification-message">EDUC02062-2531: Trả lời: Chủ đề 2. Học trực tuyến tại Trường Đại học Mở TP. HCM</div></div>
+                        <div class="content-item-footer"><div class="timestamp">cách đây 1 ngày</div></div>
+                      </div>
+                    </div>
+                    <div class="content-item-container notification" data-id="6" data-region="notification-content-item-container" role="listitem">
+                      <div tabindex="0" aria-label="Thông báo Video conference 2">
+                        <div class="content-item-body"><div class="notification-image"><i class="icon">◆</i></div><div class="notification-message">Thông báo thời gian tổ chức Video conference 2 (COSC04052-2531 Lập trình hướng đối tượng - 2531)</div></div>
+                        <div class="content-item-footer"><div class="timestamp">cách đây 3 ngày</div></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="empty-text">Bạn không có thông báo nào</div>
+                  <span class="loading-icon"></span>
+                </div>
+                <div class="content-area" data-region="content-area">
+                  <div class="toggle-mode">Quay lại</div>
+                  <div class="header" data-region="header">
+                    <div class="content-item-body"><div class="notification-image"><i class="icon">◆</i></div><div class="notification-message">Bạn đã nộp bài làm cho Bài tập lớn - Phần 2.</div></div>
+                    <div class="content-item-footer"><div class="timestamp">cách đây 6 phút</div></div>
+                  </div>
+                  <div class="content" data-region="content">
+                    <p><a href="#">EDUC02062-2531</a> → Bài tập → Bài tập lớn - Phần 2</p>
+                    <hr>
+                    <p>Bạn đã nộp bài làm cho <strong>“Bài tập lớn - Phần 2”</strong>.</p>
+                    <p>Bạn có thể xem trạng thái và phản hồi của giảng viên tại trang bài tập.</p>
+                  </div>
+                  <div class="empty-text">Select from the list of notifications on the side to view more details</div>
+                  <div class="footer" data-region="footer"><a href="#">Đi đến: Bài tập lớn - Phần 2</a></div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    <a href="#" id="back-to-top" role="button" title="Back to Top and Scrollspy" aria-label="Back to Top and Scrollspy">↑</a>
+    <script src="../src/notifications.js"></script>
+  </body>
+</html>

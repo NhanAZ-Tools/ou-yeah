@@ -1,13 +1,15 @@
 {
   "name": "ou-yeah",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "lint": "eslint src/**/*.js",
     "typecheck": "tsc --project jsconfig.json",
     "test": "node --test",
-    "check": "npm run lint && npm run typecheck && npm test"
+    "check": "npm run lint && npm run typecheck && npm test",
+    "pack:extension": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1",
+    "release": "npm run check && npm run pack:extension"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

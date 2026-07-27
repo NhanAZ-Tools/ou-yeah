@@ -10,11 +10,13 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 - Chọn tốc độ phát trực tiếp: `0.5x` đến `4x`.
 - Tải video nếu trang cung cấp file trực tiếp hoặc HLS không mã hóa.
 - Tự inject vào iframe Vimeo, dùng được khi học video ELOLMS.
-- Thanh điều khiển sáng, gọn, màu xanh Đại học Mở `#3659A2`.
+- Thanh điều khiển tối gọn, dùng xanh OU tiết chế và bộ chữ [Space Grotesk từ best-fonts](https://github.com/NhanAZ-Web/best-fonts/tree/main/SpaceGrotesk) thống nhất.
 - Cố gắng hiện / ẩn cùng thanh điều khiển gốc của Vimeo.
 - Thêm mini-toolbar tải PDF nổi theo cùng giao diện với thanh điều khiển video trên các trang `https://thuquan.ou.edu.vn/doc-truc-tuyen/sach/*`.
 - Tự tải ảnh JPEG của từng trang, giữ nguyên thứ tự và đóng gói thành một tệp PDF.
 - Hiển thị progress bar mượt, phần trăm tải trang, trạng thái tạo PDF và kết quả ngay trên mini-toolbar.
+- Nâng cấp trang thông báo ELOLMS với tìm kiếm, lọc chưa đọc/loại/môn học, nhóm theo thời gian và bố cục một cột responsive.
+- Làm lại TOC/Course Map trong trang khóa học ELOLMS: gọn hơn, phân cấp rõ hơn, có tìm nhanh, badge loại tài nguyên và highlight mục đang xem.
 
 ## Cài đặt thủ công
 
@@ -52,3 +54,11 @@ npm run check
 ```
 
 Lệnh `check` chạy ESLint (bao gồm kiểm tra Promise bị bỏ rơi), TypeScript `checkJs` với kiểu dữ liệu Chrome Extension và regression test cho trường hợp extension bị reload giữa chừng.
+
+## Phát hành
+
+```powershell
+npm run release
+```
+
+Lệnh `release` chạy toàn bộ kiểm tra, xác nhận version trong `package.json` và `manifest.json` khớp nhau, rồi đóng gói Chrome extension vào `dist/OU-Yeah-v<version>.zip` kèm file SHA-256.
