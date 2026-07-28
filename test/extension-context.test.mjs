@@ -266,6 +266,10 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /document\.addEventListener\("readystatechange", startCourseMapBootstrap\)/);
   assert.match(source, /COURSE_MAP_STYLE_ID = "ou-yeah-course-map-theme"/);
   assert.match(source, /COURSE_MAP_TOOLS_ID = "ou-yeah-course-map-tools"/);
+  assert.match(source, /COURSE_MAP_RESIZE_HANDLE_CLASS = "ou-course-map-resize-handle"/);
+  assert.match(source, /COURSE_MAP_WIDTH_STORAGE_KEY = "ouYeahCourseMapWidth"/);
+  assert.match(source, /COURSE_MAP_MIN_WIDTH = 320/);
+  assert.match(source, /COURSE_MAP_MAX_WIDTH = 620/);
   assert.match(source, /Course Map/);
   assert.match(source, /input\.addEventListener\("input", \(\) => applyCourseMapFilter\(courseIndex, input\.value\)\)/);
   assert.match(source, /ou-yeah-current-section/);
@@ -293,6 +297,16 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /if \(!isCourseMapDrawerOpen\(drawer\)\) return;/);
   assert.match(source, /document\.body\?\.classList\.remove\("drawer-open-index", "drawer-open-left"\);/);
   assert.match(source, /drawer\.classList\.remove\("show"\);/);
+  assert.match(source, /ensureCourseMapResizeHandle\(drawer\)/);
+  assert.match(source, /function startCourseMapResize\(event, drawer\)/);
+  assert.match(source, /handle\.addEventListener\("pointerdown", \(event\) => startCourseMapResize\(event, drawer\)\)/);
+  assert.match(source, /handle\.addEventListener\("dblclick", \(\) => \{/);
+  assert.match(source, /persistCourseMapWidthPreference\(COURSE_MAP_DEFAULT_WIDTH\)/);
+  assert.match(source, /document\.body\?\.style\.setProperty\("--ou-course-map-width", `\$\{normalizedWidth\}px`\)/);
+  assert.match(source, /document\.body\?\.style\.setProperty\("--drawer-left-width", `\$\{normalizedWidth\}px`\)/);
+  assert.match(source, /chrome\.storage\.sync\.get\(\[COURSE_MAP_WIDTH_STORAGE_KEY\]/);
+  assert.match(source, /chrome\.storage\.sync\.set\(\{ \[COURSE_MAP_WIDTH_STORAGE_KEY\]: normalizedWidth \}/);
+  assert.match(source, /clamp\(Math\.round\(Number\(width\) \|\| COURSE_MAP_DEFAULT_WIDTH\), COURSE_MAP_MIN_WIDTH, maxWidth\)/);
   assert.match(source, /window\.setTimeout\(refreshCourseMap, 80\)/);
   assert.match(source, /window\.setTimeout\(refreshCourseMap, 260\)/);
   assert.match(source, /window\.setTimeout\(refreshCourseMap, 620\)/);
@@ -309,6 +323,9 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /text-overflow: ellipsis !important;/);
   assert.match(source, /min-height: 36px !important;/);
   assert.match(source, /data-ou-course-map-kind-label/);
+  assert.match(source, /width: min\(var\(--ou-course-map-width\), calc\(100vw - 24px\)\) !important;/);
+  assert.match(source, /\.\$\{COURSE_MAP_RESIZE_HANDLE_CLASS\}/);
+  assert.match(source, /cursor: ew-resize !important;/);
   assert.match(source, /grid-template-columns: 24px 22px minmax\(0, 1fr\);/);
   assert.match(source, /grid-template-columns: 34px minmax\(0, 1fr\);/);
   assert.match(source, /#courseindex\.ou-yeah-course-map \[data-for="cm"\] \.courseindex-link \{\s+grid-column: 2;/);

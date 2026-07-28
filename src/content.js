@@ -42,6 +42,11 @@
   const ELOLMS_FONT_STYLE_ID = "ou-yeah-elolms-font-theme";
   const COURSE_MAP_STYLE_ID = "ou-yeah-course-map-theme";
   const COURSE_MAP_TOOLS_ID = "ou-yeah-course-map-tools";
+  const COURSE_MAP_RESIZE_HANDLE_CLASS = "ou-course-map-resize-handle";
+  const COURSE_MAP_WIDTH_STORAGE_KEY = "ouYeahCourseMapWidth";
+  const COURSE_MAP_DEFAULT_WIDTH = 390;
+  const COURSE_MAP_MIN_WIDTH = 320;
+  const COURSE_MAP_MAX_WIDTH = 620;
   const NOTIFICATION_UNREAD_ICON_FILE = "envelope-dot.svg";
   const NOTIFICATION_TYPE_ICON_FILES = {
     assignment: "book-alt.svg",
@@ -64,6 +69,7 @@
   let courseMapDefaultDrawerCloseDeadline = 0;
   let courseMapUserToggledSections = false;
   let courseMapUserToggledDrawer = false;
+  let courseMapResizeWidth = COURSE_MAP_DEFAULT_WIDTH;
   let courseMapObserver = null;
   if (IS_ELOLMS) initElolmsFontTheme();
   if (IS_ELOLMS && window.top === window.self) initNotificationPopoverPolish();
@@ -166,6 +172,7 @@
 
   function initCourseMapPolish() {
     injectCourseMapTheme();
+    loadCourseMapWidthPreference();
     startCourseMapBootstrap();
 
     if (!courseMapObserver) {
@@ -313,12 +320,130 @@
     if (!drawer || !courseIndex) return;
 
     drawer.classList.add("ou-yeah-course-map-drawer");
+    applyCourseMapWidth(courseMapResizeWidth);
+    ensureCourseMapResizeHandle(drawer);
     closeCourseMapDrawerByDefault(drawer);
     courseIndex.classList.add("ou-yeah-course-map");
     ensureCourseMapTools(drawer, courseIndex);
     annotateCourseMap(courseIndex);
     updateCourseMapStats(drawer, courseIndex);
     updateCourseMapCurrentSection();
+  }
+
+  function ensureCourseMapResizeHandle(drawer) {
+    if (drawer.querySelector(`.${COURSE_MAP_RESIZE_HANDLE_CLASS}`)) return;
+
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = COURSE_MAP_RESIZE_HANDLE_CLASS;
+    handle.setAttribute("aria-label", "Kéo để đổi độ rộng Course Map");
+    handle.title = "Kéo để đổi độ rộng Course Map. Nhấp đúp để đặt lại.";
+    handle.addEventListener("pointerdown", (event) => startCourseMapResize(event, drawer));
+    handle.addEventListener("dblclick", () => {
+      applyCourseMapWidth(COURSE_MAP_DEFAULT_WIDTH);
+      persistCourseMapWidthPreference(COURSE_MAP_DEFAULT_WIDTH);
+    });
+    drawer.appendChild(handle);
+  }
+
+  function startCourseMapResize(event, drawer) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+
+    const startX = event.clientX;
+    const startWidth = courseMapResizeWidth || Math.round(drawer.getBoundingClientRect().width) || COURSE_MAP_DEFAULT_WIDTH;
+    document.body?.classList.add("ou-yeah-course-map-resizing");
+
+    const handle = event.currentTarget;
+    if (handle instanceof HTMLElement) {
+      try {
+        handle.setPointerCapture?.(event.pointerId);
+      } catch {
+        // Pointer capture is progressive enhancement; document listeners still handle drag.
+      }
+    }
+
+    const move = (moveEvent) => {
+      moveEvent.preventDefault();
+      applyCourseMapWidth(startWidth + moveEvent.clientX - startX);
+    };
+
+    const stop = () => {
+      document.body?.classList.remove("ou-yeah-course-map-resizing");
+      persistCourseMapWidthPreference(courseMapResizeWidth);
+      document.removeEventListener("pointermove", move, true);
+      document.removeEventListener("pointerup", stop, true);
+      document.removeEventListener("pointercancel", stop, true);
+    };
+
+    document.addEventListener("pointermove", move, true);
+    document.addEventListener("pointerup", stop, true);
+    document.addEventListener("pointercancel", stop, true);
+  }
+
+  function applyCourseMapWidth(width) {
+    const normalizedWidth = clampCourseMapWidth(width);
+    courseMapResizeWidth = normalizedWidth;
+    document.body?.style.setProperty("--ou-course-map-width", `${normalizedWidth}px`);
+    document.body?.style.setProperty("--drawer-left-width", `${normalizedWidth}px`);
+  }
+
+  function clampCourseMapWidth(width) {
+    const viewportLimit = Math.max(COURSE_MAP_MIN_WIDTH, Math.floor(window.innerWidth - 360));
+    const maxWidth = Math.max(COURSE_MAP_MIN_WIDTH, Math.min(COURSE_MAP_MAX_WIDTH, viewportLimit));
+    return clamp(Math.round(Number(width) || COURSE_MAP_DEFAULT_WIDTH), COURSE_MAP_MIN_WIDTH, maxWidth);
+  }
+
+  function loadCourseMapWidthPreference() {
+    const fallbackWidth = readCourseMapWidthFromLocalStorage();
+    if (fallbackWidth) applyCourseMapWidth(fallbackWidth);
+
+    if (!isExtensionContextAvailable()) return;
+    try {
+      chrome.storage.sync.get([COURSE_MAP_WIDTH_STORAGE_KEY], (result) => {
+        try {
+          if (chrome.runtime.lastError) return;
+        } catch {
+          return;
+        }
+
+        const storedWidth = Number(result?.[COURSE_MAP_WIDTH_STORAGE_KEY]);
+        if (Number.isFinite(storedWidth)) applyCourseMapWidth(storedWidth);
+      });
+    } catch {
+      // Width preference is convenience-only; default width remains usable.
+    }
+  }
+
+  function persistCourseMapWidthPreference(width) {
+    const normalizedWidth = clampCourseMapWidth(width);
+    try {
+      window.localStorage.setItem(COURSE_MAP_WIDTH_STORAGE_KEY, String(normalizedWidth));
+    } catch {
+      // Private/storage-blocked contexts can still resize for the current page.
+    }
+
+    if (!isExtensionContextAvailable()) return;
+    try {
+      chrome.storage.sync.set({ [COURSE_MAP_WIDTH_STORAGE_KEY]: normalizedWidth }, () => {
+        try {
+          void chrome.runtime.lastError;
+        } catch {
+          // Old content scripts may lose extension context while a reload is happening.
+        }
+      });
+    } catch {
+      // The inline CSS variable already applied; persistence is best-effort.
+    }
+  }
+
+  function readCourseMapWidthFromLocalStorage() {
+    try {
+      const width = Number(window.localStorage.getItem(COURSE_MAP_WIDTH_STORAGE_KEY));
+      return Number.isFinite(width) ? width : 0;
+    } catch {
+      return 0;
+    }
   }
 
   function ensureCourseMapTools(drawer, courseIndex) {
@@ -611,6 +736,7 @@
         --ou-course-line: #e1e4ea;
         --ou-course-soft: #f7f8fa;
         --ou-course-panel: #fff;
+        --ou-course-map-width: ${COURSE_MAP_DEFAULT_WIDTH}px;
       }
 
       body.ou-yeah-course-view #region-main,
@@ -620,10 +746,55 @@
       }
 
       body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer {
-        width: min(390px, calc(100vw - 24px)) !important;
+        position: fixed !important;
+        width: min(var(--ou-course-map-width), calc(100vw - 24px)) !important;
+        min-width: min(${COURSE_MAP_MIN_WIDTH}px, calc(100vw - 24px)) !important;
+        max-width: min(${COURSE_MAP_MAX_WIDTH}px, calc(100vw - 24px)) !important;
         border-right: 1px solid var(--ou-course-line);
         background: #f5f6f8 !important;
         box-shadow: 12px 0 32px rgba(24, 39, 75, 0.08);
+      }
+
+      body.ou-yeah-course-map-resizing,
+      body.ou-yeah-course-map-resizing * {
+        cursor: ew-resize !important;
+        user-select: none !important;
+      }
+
+      body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .${COURSE_MAP_RESIZE_HANDLE_CLASS} {
+        position: absolute;
+        top: 0;
+        right: -5px;
+        z-index: 20;
+        width: 10px;
+        height: 100%;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        cursor: ew-resize;
+        touch-action: none;
+      }
+
+      body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .${COURSE_MAP_RESIZE_HANDLE_CLASS}::before {
+        content: "";
+        position: absolute;
+        top: 96px;
+        right: 4px;
+        width: 3px;
+        height: 72px;
+        border-radius: 999px;
+        background: rgba(82, 105, 199, 0.18);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+        opacity: 0.72;
+        transition: background 140ms ease, opacity 140ms ease, transform 140ms ease;
+      }
+
+      body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .${COURSE_MAP_RESIZE_HANDLE_CLASS}:hover::before,
+      body.ou-yeah-course-map-resizing #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .${COURSE_MAP_RESIZE_HANDLE_CLASS}::before {
+        background: rgba(82, 105, 199, 0.52);
+        opacity: 1;
+        transform: scaleX(1.25);
       }
 
       body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .drawercontent {
