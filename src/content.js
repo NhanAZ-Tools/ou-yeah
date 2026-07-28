@@ -60,7 +60,10 @@
   let courseMapBootstrapAttempts = 0;
   let courseMapDefaultCollapseApplied = false;
   let courseMapDefaultCollapseInProgress = false;
+  let courseMapDefaultDrawerCloseApplied = false;
+  let courseMapDefaultDrawerCloseDeadline = 0;
   let courseMapUserToggledSections = false;
+  let courseMapUserToggledDrawer = false;
   let courseMapObserver = null;
   if (IS_ELOLMS) initElolmsFontTheme();
   if (IS_ELOLMS && window.top === window.self) initNotificationPopoverPolish();
@@ -183,6 +186,7 @@
       if (!document.hidden) startCourseMapBootstrap();
     });
     document.addEventListener("click", handleCourseSectionToggleEvent, true);
+    document.addEventListener("click", handleCourseMapDrawerToggleEvent, true);
     document.addEventListener("transitionend", handleCourseSectionToggleEvent, true);
   }
 
@@ -231,6 +235,72 @@
     window.setTimeout(refreshCourseMap, 1100);
   }
 
+  function handleCourseMapDrawerToggleEvent(event) {
+    if (!event.isTrusted) return;
+
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const toggler = target.closest("[data-target], [data-bs-target], [data-toggler='drawers']");
+    if (!(toggler instanceof Element) || !isCourseMapDrawerToggler(toggler)) return;
+
+    courseMapUserToggledDrawer = true;
+  }
+
+  function closeCourseMapDrawerByDefault(drawer) {
+    if (courseMapDefaultDrawerCloseApplied || courseMapUserToggledDrawer) return;
+    const now = window.performance?.now?.() || Date.now();
+    if (!courseMapDefaultDrawerCloseDeadline) {
+      courseMapDefaultDrawerCloseDeadline = now + 3500;
+    }
+
+    if (now > courseMapDefaultDrawerCloseDeadline) {
+      courseMapDefaultDrawerCloseApplied = true;
+      return;
+    }
+
+    if (!isCourseMapDrawerOpen(drawer)) return;
+
+    const closeButton = Array.from(drawer.querySelectorAll("button, a"))
+      .find((element) => {
+        if (!(element instanceof HTMLElement)) return false;
+        const action = element.getAttribute("data-action") || "";
+        return isCourseMapDrawerToggler(element) && /^(closedrawer|toggle)$/.test(action);
+      });
+
+    if (closeButton instanceof HTMLElement) {
+      closeButton.click();
+    }
+
+    window.setTimeout(() => forceCloseCourseMapDrawer(drawer), 80);
+  }
+
+  function isCourseMapDrawerOpen(drawer) {
+    if (drawer.classList.contains("show")) return true;
+    if (drawer.getAttribute("aria-hidden") === "false") return true;
+    if (document.body?.classList.contains("drawer-open-index")) return true;
+    if (document.body?.classList.contains("drawer-open-left")) return true;
+    return false;
+  }
+
+  function forceCloseCourseMapDrawer(drawer) {
+    drawer.classList.remove("show");
+    drawer.setAttribute("aria-hidden", "true");
+    document.body?.classList.remove("drawer-open-index", "drawer-open-left");
+
+    document.querySelectorAll("[data-target], [data-bs-target], [data-toggler='drawers']").forEach((element) => {
+      if (!(element instanceof HTMLElement) || !isCourseMapDrawerToggler(element)) return;
+      element.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function isCourseMapDrawerToggler(element) {
+    const target = element.getAttribute("data-target")
+      || element.getAttribute("data-bs-target")
+      || "";
+    return target === "theme_boost-drawers-courseindex"
+      || target === "#theme_boost-drawers-courseindex";
+  }
+
   function refreshCourseMap() {
     if (!document.body) return;
 
@@ -243,6 +313,7 @@
     if (!drawer || !courseIndex) return;
 
     drawer.classList.add("ou-yeah-course-map-drawer");
+    closeCourseMapDrawerByDefault(drawer);
     courseIndex.classList.add("ou-yeah-course-map");
     ensureCourseMapTools(drawer, courseIndex);
     annotateCourseMap(courseIndex);
@@ -677,6 +748,10 @@
       }
 
       #courseindex.ou-yeah-course-map [data-ou-course-map-title] {
+        display: grid !important;
+        grid-template-columns: 24px 22px minmax(0, 1fr);
+        align-items: center;
+        gap: 5px;
         min-height: 34px;
         padding: 4px 7px 4px calc(8px + (var(--ou-depth, 0) * 13px)) !important;
         border: 1px solid transparent;
@@ -709,11 +784,12 @@
 
       #courseindex.ou-yeah-course-map [data-ou-course-map-title]::before {
         content: attr(data-ou-course-map-number);
+        grid-column: 1;
+        grid-row: 1;
         display: inline-grid;
         place-items: center;
         width: 24px;
         height: 22px;
-        margin-right: 7px;
         border-radius: 5px;
         background: #edf1ff;
         color: #455ba9;
@@ -724,18 +800,27 @@
 
       #courseindex.ou-yeah-course-map .courseindex-chevron {
         display: inline-grid !important;
+        grid-column: 2;
+        grid-row: 1;
         place-items: center;
-        width: 24px;
-        height: 24px;
-        min-width: 24px;
-        margin: 0 4px 0 0 !important;
+        width: 22px;
+        height: 22px;
+        min-width: 22px;
+        margin: 0 !important;
         border-radius: 6px;
         color: #697386;
         overflow: hidden;
       }
 
       #courseindex.ou-yeah-course-map .courseindex-link {
+        display: block !important;
+        grid-column: 3;
+        grid-row: 1;
         min-width: 0;
+        width: 100%;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
         color: #242a34 !important;
         font-size: 12px;
         font-weight: 620;
@@ -743,13 +828,9 @@
         text-decoration: none !important;
       }
 
-      #courseindex.ou-yeah-course-map .courseindex-section-title .courseindex-link {
-        white-space: normal !important;
-      }
-
       #courseindex.ou-yeah-course-map .courseindex-item-content {
-        margin-left: 15px;
-        padding-left: 10px;
+        margin-left: 12px;
+        padding-left: 8px;
         border-left: 1px solid #e2e6ee;
       }
 
@@ -766,7 +847,7 @@
         grid-template-columns: 34px minmax(0, 1fr);
         align-items: center;
         gap: 7px;
-        min-height: 29px;
+        min-height: 31px;
         padding: 2px 7px !important;
         border-radius: 6px;
       }
@@ -777,6 +858,8 @@
 
       #courseindex.ou-yeah-course-map [data-for="cm"]::before {
         content: attr(data-ou-course-map-kind-label);
+        grid-column: 1;
+        grid-row: 1;
         display: inline-grid;
         place-items: center;
         width: 32px;
@@ -811,9 +894,29 @@
       }
 
       #courseindex.ou-yeah-course-map [data-for="cm"] .courseindex-link {
+        grid-column: 2;
+        grid-row: 1;
+        align-self: center;
+        min-width: 0 !important;
+        width: auto !important;
+        max-width: 100% !important;
+        display: block !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
         color: #4b5360 !important;
         font-size: 11px;
         font-weight: 520;
+        line-height: 1.22;
+      }
+
+      #courseindex.ou-yeah-course-map [data-for="cm"] .completioninfo {
+        display: none !important;
+      }
+
+      #courseindex.ou-yeah-course-map [data-for="cm"] .courseindex-locked,
+      #courseindex.ou-yeah-course-map [data-for="cm"] .dragicon {
+        display: none !important;
       }
 
       #courseindex.ou-yeah-course-map .dimmed {

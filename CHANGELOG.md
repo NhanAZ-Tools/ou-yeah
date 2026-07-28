@@ -3,6 +3,8 @@
 ## 2.1.0 - 2026-07-26
 
 - Nâng cấp TOC/course index ELOLMS thành Course Map gọn hơn, có tìm nhanh, phân cấp rõ, badge loại tài nguyên và highlight mục đang xem.
+- Sửa item con trong Course Map bị ép chữ sau khi bấm từ TOC bên trái: bỏ cột completion gây nhiễu trong drawer và trả toàn bộ mục lục về một dòng ellipsis gọn.
+- Đóng Course Map bên trái mặc định khi vừa vào trang khóa học; người dùng vẫn có thể mở lại thủ công bằng nút mục lục của Moodle.
 - Siết lại heading trang khóa học thành dense row một dòng: font nhỏ hơn, icon thu gọn, bỏ padding dọc dư và dùng ellipsis cho tiêu đề dài.
 - Đồng bộ size phần tử con trong section: activity card, icon tài nguyên, deadline/availability và nút hoàn thành nhỏ gọn hơn nhưng vẫn dễ đọc.
 - Cân lại tỷ lệ giữa đề mục và activity con: đề mục rõ vai trò nhóm hơn, activity card bớt lấn át hierarchy.
