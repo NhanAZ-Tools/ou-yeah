@@ -38,6 +38,9 @@
     && location.pathname.toLowerCase() === "/message/output/popup/notifications.php";
   const IS_ELOLMS_COURSE_VIEW = IS_ELOLMS
     && location.pathname.toLowerCase() === "/course/view.php";
+  const IS_ELOLMS_COURSE_ACTIVITY = IS_ELOLMS
+    && /^\/mod\/[^/]+\/view\.php$/i.test(location.pathname);
+  const IS_ELOLMS_COURSE_CONTEXT = IS_ELOLMS_COURSE_VIEW || IS_ELOLMS_COURSE_ACTIVITY;
   const NOTIFICATION_POPOVER_STYLE_ID = "ou-yeah-notification-popover-theme";
   const ELOLMS_FONT_STYLE_ID = "ou-yeah-elolms-font-theme";
   const COURSE_MAP_STYLE_ID = "ou-yeah-course-map-theme";
@@ -73,7 +76,7 @@
   let courseMapObserver = null;
   if (IS_ELOLMS) initElolmsFontTheme();
   if (IS_ELOLMS && window.top === window.self) initNotificationPopoverPolish();
-  if (IS_ELOLMS_COURSE_VIEW && window.top === window.self) initCourseMapPolish();
+  if (IS_ELOLMS_COURSE_CONTEXT && window.top === window.self) initCourseMapPolish();
   if (IS_ELOLMS_NOTIFICATIONS) return;
   const extensionWindow = /** @type {Window & { __ouYeahLoaded?: boolean }} */ (window);
   if (extensionWindow.__ouYeahLoaded) return;
@@ -194,6 +197,10 @@
     });
     document.addEventListener("click", handleCourseSectionToggleEvent, true);
     document.addEventListener("click", handleCourseMapDrawerToggleEvent, true);
+    document.addEventListener("pointerdown", handleCourseMapResizeEdgePointerDown, true);
+    if (!window.PointerEvent) {
+      document.addEventListener("mousedown", handleCourseMapResizeEdgePointerDown, true);
+    }
     document.addEventListener("transitionend", handleCourseSectionToggleEvent, true);
   }
 
@@ -312,8 +319,6 @@
     if (!document.body) return;
 
     document.body.classList.add("ou-yeah-course-view");
-    applyDefaultCollapsedCourseSections();
-    annotateOpenCourseSections();
 
     const drawer = document.getElementById("theme_boost-drawers-courseindex");
     const courseIndex = document.getElementById("courseindex");
@@ -322,6 +327,11 @@
     drawer.classList.add("ou-yeah-course-map-drawer");
     applyCourseMapWidth(courseMapResizeWidth);
     ensureCourseMapResizeHandle(drawer);
+
+    if (!IS_ELOLMS_COURSE_VIEW) return;
+
+    applyDefaultCollapsedCourseSections();
+    annotateOpenCourseSections();
     closeCourseMapDrawerByDefault(drawer);
     courseIndex.classList.add("ou-yeah-course-map");
     ensureCourseMapTools(drawer, courseIndex);
@@ -339,6 +349,9 @@
     handle.setAttribute("aria-label", "Kéo để đổi độ rộng Course Map");
     handle.title = "Kéo để đổi độ rộng Course Map. Nhấp đúp để đặt lại.";
     handle.addEventListener("pointerdown", (event) => startCourseMapResize(event, drawer));
+    handle.addEventListener("mousedown", (event) => {
+      if (!window.PointerEvent) startCourseMapResize(event, drawer);
+    });
     handle.addEventListener("dblclick", () => {
       applyCourseMapWidth(COURSE_MAP_DEFAULT_WIDTH);
       persistCourseMapWidthPreference(COURSE_MAP_DEFAULT_WIDTH);
@@ -346,16 +359,32 @@
     drawer.appendChild(handle);
   }
 
+  function handleCourseMapResizeEdgePointerDown(event) {
+    if ("button" in event && event.button !== 0) return;
+
+    const drawer = document.getElementById("theme_boost-drawers-courseindex");
+    if (!(drawer instanceof HTMLElement) || !isCourseMapDrawerOpen(drawer)) return;
+
+    const rect = drawer.getBoundingClientRect();
+    const edgeSize = 14;
+    const isNearRightEdge = event.clientX >= rect.right - edgeSize && event.clientX <= rect.right + edgeSize;
+    const isInsideVerticalBounds = event.clientY >= rect.top && event.clientY <= rect.bottom;
+    if (!isNearRightEdge || !isInsideVerticalBounds) return;
+
+    startCourseMapResize(event, drawer);
+  }
+
   function startCourseMapResize(event, drawer) {
-    if (event.button !== 0) return;
+    if ("button" in event && event.button !== 0) return;
     event.preventDefault();
+    event.stopPropagation();
 
     const startX = event.clientX;
     const startWidth = courseMapResizeWidth || Math.round(drawer.getBoundingClientRect().width) || COURSE_MAP_DEFAULT_WIDTH;
     document.body?.classList.add("ou-yeah-course-map-resizing");
 
     const handle = event.currentTarget;
-    if (handle instanceof HTMLElement) {
+    if (handle instanceof HTMLElement && "pointerId" in event) {
       try {
         handle.setPointerCapture?.(event.pointerId);
       } catch {
@@ -368,17 +397,20 @@
       applyCourseMapWidth(startWidth + moveEvent.clientX - startX);
     };
 
+    const moveEventName = "pointerId" in event ? "pointermove" : "mousemove";
+    const upEventName = "pointerId" in event ? "pointerup" : "mouseup";
+    const cancelEventName = "pointerId" in event ? "pointercancel" : "mouseleave";
     const stop = () => {
       document.body?.classList.remove("ou-yeah-course-map-resizing");
       persistCourseMapWidthPreference(courseMapResizeWidth);
-      document.removeEventListener("pointermove", move, true);
-      document.removeEventListener("pointerup", stop, true);
-      document.removeEventListener("pointercancel", stop, true);
+      document.removeEventListener(moveEventName, move, true);
+      document.removeEventListener(upEventName, stop, true);
+      document.removeEventListener(cancelEventName, stop, true);
     };
 
-    document.addEventListener("pointermove", move, true);
-    document.addEventListener("pointerup", stop, true);
-    document.addEventListener("pointercancel", stop, true);
+    document.addEventListener(moveEventName, move, true);
+    document.addEventListener(upEventName, stop, true);
+    document.addEventListener(cancelEventName, stop, true);
   }
 
   function applyCourseMapWidth(width) {
@@ -764,9 +796,9 @@
       body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .${COURSE_MAP_RESIZE_HANDLE_CLASS} {
         position: absolute;
         top: 0;
-        right: -5px;
-        z-index: 20;
-        width: 10px;
+        right: -8px;
+        z-index: 2147483647;
+        width: 18px;
         height: 100%;
         padding: 0;
         border: 0;
@@ -780,7 +812,7 @@
         content: "";
         position: absolute;
         top: 96px;
-        right: 4px;
+        right: 8px;
         width: 3px;
         height: 72px;
         border-radius: 999px;

@@ -259,6 +259,10 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   const source = await readFile(new URL("../src/content.js", import.meta.url), "utf8");
 
   assert.match(source, /IS_ELOLMS_COURSE_VIEW/);
+  assert.match(source, /IS_ELOLMS_COURSE_ACTIVITY/);
+  assert.match(source, /\^\\\/mod\\\/\[\^\/\]\+\\\/view\\\.php\$/);
+  assert.match(source, /IS_ELOLMS_COURSE_CONTEXT = IS_ELOLMS_COURSE_VIEW \|\| IS_ELOLMS_COURSE_ACTIVITY/);
+  assert.match(source, /if \(IS_ELOLMS_COURSE_CONTEXT && window\.top === window\.self\) initCourseMapPolish\(\)/);
   assert.match(source, /initCourseMapPolish\(\)/);
   assert.match(source, /startCourseMapBootstrap\(\)/);
   assert.match(source, /runCourseMapBootstrap/);
@@ -289,6 +293,8 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /document\.addEventListener\("click", handleCourseSectionToggleEvent, true\)/);
   assert.match(source, /document\.addEventListener\("transitionend", handleCourseSectionToggleEvent, true\)/);
   assert.match(source, /document\.addEventListener\("click", handleCourseMapDrawerToggleEvent, true\)/);
+  assert.match(source, /document\.addEventListener\("pointerdown", handleCourseMapResizeEdgePointerDown, true\)/);
+  assert.match(source, /document\.addEventListener\("mousedown", handleCourseMapResizeEdgePointerDown, true\)/);
   assert.match(source, /event\.isTrusted/);
   assert.match(source, /courseMapUserToggledDrawer = true;/);
   assert.match(source, /function closeCourseMapDrawerByDefault\(drawer\)/);
@@ -298,8 +304,14 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /document\.body\?\.classList\.remove\("drawer-open-index", "drawer-open-left"\);/);
   assert.match(source, /drawer\.classList\.remove\("show"\);/);
   assert.match(source, /ensureCourseMapResizeHandle\(drawer\)/);
+  assert.match(source, /if \(!IS_ELOLMS_COURSE_VIEW\) return;/);
+  assert.match(source, /function handleCourseMapResizeEdgePointerDown\(event\)/);
+  assert.match(source, /const edgeSize = 14;/);
+  assert.match(source, /event\.clientX >= rect\.right - edgeSize && event\.clientX <= rect\.right \+ edgeSize/);
   assert.match(source, /function startCourseMapResize\(event, drawer\)/);
   assert.match(source, /handle\.addEventListener\("pointerdown", \(event\) => startCourseMapResize\(event, drawer\)\)/);
+  assert.match(source, /handle\.addEventListener\("mousedown", \(event\) => \{/);
+  assert.match(source, /event\.stopPropagation\(\)/);
   assert.match(source, /handle\.addEventListener\("dblclick", \(\) => \{/);
   assert.match(source, /persistCourseMapWidthPreference\(COURSE_MAP_DEFAULT_WIDTH\)/);
   assert.match(source, /document\.body\?\.style\.setProperty\("--ou-course-map-width", `\$\{normalizedWidth\}px`\)/);
@@ -325,6 +337,8 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /data-ou-course-map-kind-label/);
   assert.match(source, /width: min\(var\(--ou-course-map-width\), calc\(100vw - 24px\)\) !important;/);
   assert.match(source, /\.\$\{COURSE_MAP_RESIZE_HANDLE_CLASS\}/);
+  assert.match(source, /z-index: 2147483647;/);
+  assert.match(source, /width: 18px;/);
   assert.match(source, /cursor: ew-resize !important;/);
   assert.match(source, /grid-template-columns: 24px 22px minmax\(0, 1fr\);/);
   assert.match(source, /grid-template-columns: 34px minmax\(0, 1fr\);/);
