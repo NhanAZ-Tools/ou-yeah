@@ -4,9 +4,17 @@
 
 - Nâng cấp TOC/course index ELOLMS thành Course Map gọn hơn, có tìm nhanh, phân cấp rõ, badge loại tài nguyên và highlight mục đang xem.
 - Sửa item con trong Course Map bị ép chữ sau khi bấm từ TOC bên trái: bỏ cột completion gây nhiễu trong drawer và trả toàn bộ mục lục về một dòng ellipsis gọn.
-- Đóng Course Map bên trái mặc định khi vừa vào trang khóa học; người dùng vẫn có thể mở lại thủ công bằng nút mục lục của Moodle.
+- Khôi phục hành vi mặc định của TOC Moodle: extension không tự đóng Course Map bên trái khi vừa vào trang khóa học.
 - Cho phép kéo mép phải Course Map để đổi độ rộng TOC, lưu kích thước đã chọn và nhấp đúp mép kéo để reset về mặc định.
 - Sửa resize TOC không hoạt động ở trang hoạt động như `/mod/page/view.php`: resize giờ chạy trên cả course page và module page, kèm vùng bắt kéo rộng hơn ở mép phải.
+- Tinh gọn toolbar Course Map khi TOC mở sẵn theo mặc định: giảm chiều cao header/search/stats và áp dụng cùng density/ellipsis cho TOC ở cả trang activity.
+- Sửa Course Map bị giãn dọc khi section đã thu gọn nhưng vùng content collapse vẫn chiếm khoảng trắng.
+- Siết tiếp spacing của TOC khi section đang mở: reset margin/padding dọc mặc định của Moodle trong item con và giảm chiều cao mỗi dòng.
+- Hạ section cha trong Course Map về row một dòng như mục con: cố định chiều cao title, thu nhỏ số thứ tự/chevron và chặn Moodle padding làm phình card.
+- Chuẩn hóa click section cha cấp 1 trong Course Map: giữ đúng semantics `#section-N`, scroll/highlight section hiện tại và không lẫn với activity/module con.
+- Sửa highlight section cha trong Course Map theo URL `#section-N`: ưu tiên đọc `location.hash`, cập nhật khi `hashchange` và tăng độ tương phản trạng thái đang chọn.
+- Làm nổi bật mục đang xem trong TOC ở các trang hoạt động (`/mod/*/view.php`) bằng viền brand, nền rõ hơn, nhãn "Đang xem" và tự cuộn TOC tới mục hiện tại.
+- Sửa link TOC dạng `#module-...`/course overview trên trang hoạt động để không bị đá ngược về `/course/view.php?id=...#` khi bấm các mục như `Chuẩn đầu ra`.
 - Siết lại heading trang khóa học thành dense row một dòng: font nhỏ hơn, icon thu gọn, bỏ padding dọc dư và dùng ellipsis cho tiêu đề dài.
 - Đồng bộ size phần tử con trong section: activity card, icon tài nguyên, deadline/availability và nút hoàn thành nhỏ gọn hơn nhưng vẫn dễ đọc.
 - Cân lại tỷ lệ giữa đề mục và activity con: đề mục rõ vai trò nhóm hơn, activity card bớt lấn át hierarchy.

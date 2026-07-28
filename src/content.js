@@ -68,11 +68,9 @@
   let courseMapBootstrapAttempts = 0;
   let courseMapDefaultCollapseApplied = false;
   let courseMapDefaultCollapseInProgress = false;
-  let courseMapDefaultDrawerCloseApplied = false;
-  let courseMapDefaultDrawerCloseDeadline = 0;
   let courseMapUserToggledSections = false;
-  let courseMapUserToggledDrawer = false;
   let courseMapResizeWidth = COURSE_MAP_DEFAULT_WIDTH;
+  let courseMapCurrentModuleScrolled = false;
   let courseMapObserver = null;
   if (IS_ELOLMS) initElolmsFontTheme();
   if (IS_ELOLMS && window.top === window.self) initNotificationPopoverPolish();
@@ -195,8 +193,10 @@
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) startCourseMapBootstrap();
     });
+    window.addEventListener("hashchange", scheduleCourseMapScroll, { passive: true });
     document.addEventListener("click", handleCourseSectionToggleEvent, true);
-    document.addEventListener("click", handleCourseMapDrawerToggleEvent, true);
+    document.addEventListener("click", handleCourseMapActivityAnchorClick, true);
+    document.addEventListener("click", handleCourseMapTopLevelSectionClick, true);
     document.addEventListener("pointerdown", handleCourseMapResizeEdgePointerDown, true);
     if (!window.PointerEvent) {
       document.addEventListener("mousedown", handleCourseMapResizeEdgePointerDown, true);
@@ -249,43 +249,63 @@
     window.setTimeout(refreshCourseMap, 1100);
   }
 
-  function handleCourseMapDrawerToggleEvent(event) {
-    if (!event.isTrusted) return;
+  function handleCourseMapActivityAnchorClick(event) {
+    if (!IS_ELOLMS_COURSE_ACTIVITY) return;
 
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const toggler = target.closest("[data-target], [data-bs-target], [data-toggler='drawers']");
-    if (!(toggler instanceof Element) || !isCourseMapDrawerToggler(toggler)) return;
 
-    courseMapUserToggledDrawer = true;
+    const link = target.closest("#courseindex [data-for='cm'] .courseindex-link");
+    if (!(link instanceof HTMLAnchorElement)) return;
+
+    const anchorHash = getCourseMapActivityAnchorHash(link);
+    if (!anchorHash) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const normalizedUrl = new URL(location.href);
+    normalizedUrl.hash = anchorHash;
+    history.pushState(null, "", normalizedUrl.href);
+
+    const anchorTarget = document.getElementById(anchorHash.slice(1));
+    if (anchorTarget instanceof HTMLElement) {
+      anchorTarget.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+    }
+
+    scheduleCourseMapRefresh();
   }
 
-  function closeCourseMapDrawerByDefault(drawer) {
-    if (courseMapDefaultDrawerCloseApplied || courseMapUserToggledDrawer) return;
-    const now = window.performance?.now?.() || Date.now();
-    if (!courseMapDefaultDrawerCloseDeadline) {
-      courseMapDefaultDrawerCloseDeadline = now + 3500;
+  function handleCourseMapTopLevelSectionClick(event) {
+    if (!IS_ELOLMS_COURSE_VIEW) return;
+
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const link = target.closest("#courseindex [data-ou-course-map-title] .courseindex-link");
+    if (!(link instanceof HTMLAnchorElement)) return;
+
+    const section = link.closest('[data-for="section"]');
+    if (!(section instanceof HTMLElement)) return;
+    if (section.dataset.ouCourseMapDepth !== "0") return;
+
+    const sectionHash = getCourseMapSectionAnchorHash(link);
+    if (!sectionHash) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const normalizedUrl = new URL(location.href);
+    normalizedUrl.hash = sectionHash;
+    history.pushState(null, "", normalizedUrl.href);
+
+    const sectionTarget = document.getElementById(sectionHash.slice(1));
+    if (sectionTarget instanceof HTMLElement) {
+      sectionTarget.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
     }
 
-    if (now > courseMapDefaultDrawerCloseDeadline) {
-      courseMapDefaultDrawerCloseApplied = true;
-      return;
-    }
-
-    if (!isCourseMapDrawerOpen(drawer)) return;
-
-    const closeButton = Array.from(drawer.querySelectorAll("button, a"))
-      .find((element) => {
-        if (!(element instanceof HTMLElement)) return false;
-        const action = element.getAttribute("data-action") || "";
-        return isCourseMapDrawerToggler(element) && /^(closedrawer|toggle)$/.test(action);
-      });
-
-    if (closeButton instanceof HTMLElement) {
-      closeButton.click();
-    }
-
-    window.setTimeout(() => forceCloseCourseMapDrawer(drawer), 80);
+    markCourseMapCurrentSection(section);
+    scheduleCourseMapScroll();
   }
 
   function isCourseMapDrawerOpen(drawer) {
@@ -294,25 +314,6 @@
     if (document.body?.classList.contains("drawer-open-index")) return true;
     if (document.body?.classList.contains("drawer-open-left")) return true;
     return false;
-  }
-
-  function forceCloseCourseMapDrawer(drawer) {
-    drawer.classList.remove("show");
-    drawer.setAttribute("aria-hidden", "true");
-    document.body?.classList.remove("drawer-open-index", "drawer-open-left");
-
-    document.querySelectorAll("[data-target], [data-bs-target], [data-toggler='drawers']").forEach((element) => {
-      if (!(element instanceof HTMLElement) || !isCourseMapDrawerToggler(element)) return;
-      element.setAttribute("aria-expanded", "false");
-    });
-  }
-
-  function isCourseMapDrawerToggler(element) {
-    const target = element.getAttribute("data-target")
-      || element.getAttribute("data-bs-target")
-      || "";
-    return target === "theme_boost-drawers-courseindex"
-      || target === "#theme_boost-drawers-courseindex";
   }
 
   function refreshCourseMap() {
@@ -327,15 +328,16 @@
     drawer.classList.add("ou-yeah-course-map-drawer");
     applyCourseMapWidth(courseMapResizeWidth);
     ensureCourseMapResizeHandle(drawer);
+    normalizeCourseActivityAnchorLinks(courseIndex);
+    courseIndex.classList.add("ou-yeah-course-map");
+    annotateCourseMap(courseIndex);
+    highlightCurrentCourseIndexModule(courseIndex);
 
     if (!IS_ELOLMS_COURSE_VIEW) return;
 
     applyDefaultCollapsedCourseSections();
     annotateOpenCourseSections();
-    closeCourseMapDrawerByDefault(drawer);
-    courseIndex.classList.add("ou-yeah-course-map");
     ensureCourseMapTools(drawer, courseIndex);
-    annotateCourseMap(courseIndex);
     updateCourseMapStats(drawer, courseIndex);
     updateCourseMapCurrentSection();
   }
@@ -476,6 +478,115 @@
     } catch {
       return 0;
     }
+  }
+
+  function normalizeCourseActivityAnchorLinks(courseIndex) {
+    if (!IS_ELOLMS_COURSE_ACTIVITY) return;
+
+    const currentUrl = new URL(location.href);
+    courseIndex.querySelectorAll('[data-for="cm"] .courseindex-link').forEach((link) => {
+      if (!(link instanceof HTMLAnchorElement)) return;
+
+      const rawHref = (link.getAttribute("href") || "").trim();
+      if (!rawHref) return;
+
+      const anchorHash = getCourseMapActivityAnchorHash(link);
+      if (!anchorHash) return;
+
+      const normalizedUrl = new URL(currentUrl.href);
+      normalizedUrl.hash = anchorHash;
+      link.href = normalizedUrl.href;
+      link.dataset.ouCourseMapAnchorNormalized = "true";
+    });
+  }
+
+  function getCourseMapActivityAnchorHash(link) {
+    const rawHref = (link.getAttribute("href") || "").trim();
+    if (!rawHref) return "";
+
+    let linkUrl;
+    try {
+      linkUrl = new URL(rawHref, location.href);
+    } catch {
+      return "";
+    }
+
+    if (!/^#module-\d+$/i.test(linkUrl.hash)) return "";
+
+    const isHashOnlyAnchor = rawHref.startsWith("#module-");
+    const isCourseOverviewAnchor = linkUrl.pathname.toLowerCase() === "/course/view.php";
+    const isNormalizedActivityAnchor = link.dataset.ouCourseMapAnchorNormalized === "true";
+    if (!isHashOnlyAnchor && !isCourseOverviewAnchor && !isNormalizedActivityAnchor) return "";
+
+    return linkUrl.hash;
+  }
+
+  function getCourseMapSectionAnchorHash(link) {
+    const rawHref = (link.getAttribute("href") || "").trim();
+    if (!rawHref) return "";
+
+    let linkUrl;
+    try {
+      linkUrl = new URL(rawHref, location.href);
+    } catch {
+      return "";
+    }
+
+    return /^#section-\d+$/i.test(linkUrl.hash) ? linkUrl.hash : "";
+  }
+
+  function markCourseMapCurrentSection(section) {
+    const courseIndex = document.getElementById("courseindex");
+    if (!courseIndex) return;
+
+    courseIndex.querySelectorAll(".ou-yeah-current-section").forEach((item) => {
+      item.classList.remove("ou-yeah-current-section");
+    });
+    section.classList.add("ou-yeah-current-section");
+  }
+
+  function highlightCurrentCourseIndexModule(courseIndex) {
+    courseIndex.querySelectorAll(".ou-yeah-current-module").forEach((item) => {
+      item.classList.remove("ou-yeah-current-module");
+      item.querySelector(".courseindex-link")?.removeAttribute("aria-current");
+    });
+
+    if (!IS_ELOLMS_COURSE_ACTIVITY) return;
+
+    const currentUrl = new URL(location.href);
+    const currentId = currentUrl.searchParams.get("id");
+    if (!currentId) return;
+
+    const currentPath = currentUrl.pathname.toLowerCase();
+    const currentLink = Array.from(courseIndex.querySelectorAll('[data-for="cm"] .courseindex-link'))
+      .find((link) => {
+        if (!(link instanceof HTMLAnchorElement)) return false;
+        if (link.dataset.ouCourseMapAnchorNormalized === "true") return false;
+
+        try {
+          const linkUrl = new URL(link.href, location.href);
+          return linkUrl.pathname.toLowerCase() === currentPath
+            && linkUrl.searchParams.get("id") === currentId;
+        } catch {
+          return false;
+        }
+      });
+
+    const currentItem = currentLink?.closest('[data-for="cm"]');
+    if (!(currentItem instanceof HTMLElement)) return;
+
+    currentItem.classList.add("ou-yeah-current-module");
+    currentLink?.setAttribute("aria-current", "page");
+    currentItem.closest('[data-for="section"]')?.classList.add("ou-yeah-current-section");
+
+    const drawer = courseIndex.closest("#theme_boost-drawers-courseindex");
+    if (courseMapCurrentModuleScrolled || !(drawer instanceof HTMLElement) || !isCourseMapDrawerOpen(drawer)) return;
+    courseMapCurrentModuleScrolled = true;
+    currentItem.scrollIntoView({
+      behavior: "auto",
+      block: "center",
+      inline: "nearest"
+    });
   }
 
   function ensureCourseMapTools(drawer, courseIndex) {
@@ -688,6 +799,8 @@
     const courseIndex = document.getElementById("courseindex");
     if (!courseIndex) return;
 
+    if (markCourseMapCurrentSectionFromHash(courseIndex)) return;
+
     const sections = Array.from(document.querySelectorAll("#region-main [id^='section-']"))
       .filter((section) => section instanceof HTMLElement);
     if (!sections.length) return;
@@ -705,7 +818,32 @@
     if (!current.id) return;
     const selector = `.courseindex-link[href$="#${CSS.escape(current.id)}"], .courseindex-link[href*="#${CSS.escape(current.id)}"]`;
     const link = courseIndex.querySelector(selector);
-    link?.closest('[data-for="section"]')?.classList.add("ou-yeah-current-section");
+    const section = link?.closest('[data-for="section"]');
+    if (section instanceof HTMLElement) markCourseMapCurrentSection(section);
+  }
+
+  function markCourseMapCurrentSectionFromHash(courseIndex) {
+    if (!/^#section-\d+$/i.test(location.hash)) return false;
+
+    const section = findCourseMapSectionByHash(courseIndex, location.hash);
+    if (!(section instanceof HTMLElement)) return false;
+
+    markCourseMapCurrentSection(section);
+    return true;
+  }
+
+  function findCourseMapSectionByHash(courseIndex, hash) {
+    const links = Array.from(courseIndex.querySelectorAll("[data-ou-course-map-title] .courseindex-link"));
+    const link = links.find((candidate) => {
+      if (!(candidate instanceof HTMLAnchorElement)) return false;
+      try {
+        return new URL(candidate.getAttribute("href") || candidate.href, location.href).hash === hash;
+      } catch {
+        return false;
+      }
+    });
+
+    return link?.closest('[data-for="section"]') || null;
   }
 
   function classifyCourseMapModule(title, href) {
@@ -830,7 +968,38 @@
       }
 
       body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .drawercontent {
-        padding: 12px 10px 18px !important;
+        padding: 8px 8px 16px !important;
+      }
+
+      body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer #courseindex [data-for="cm"].ou-yeah-current-module {
+        position: relative !important;
+        margin: 2px 4px 2px 3px !important;
+        padding-right: 62px !important;
+        border: 1px solid rgba(82, 105, 199, 0.26) !important;
+        border-radius: 8px !important;
+        background: linear-gradient(90deg, rgba(82, 105, 199, 0.16), rgba(82, 105, 199, 0.06)) !important;
+        box-shadow: inset 3px 0 0 var(--ou-course-brand), 0 5px 12px rgba(82, 105, 199, 0.09) !important;
+      }
+
+      body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer #courseindex [data-for="cm"].ou-yeah-current-module::after {
+        content: "Đang xem";
+        position: absolute;
+        right: 7px;
+        top: 50%;
+        padding: 2px 5px;
+        border-radius: 999px;
+        background: #fff;
+        color: var(--ou-course-brand);
+        font-size: 8.5px;
+        font-weight: 750;
+        line-height: 1;
+        transform: translateY(-50%);
+        box-shadow: 0 0 0 1px rgba(82, 105, 199, 0.18);
+      }
+
+      body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer #courseindex [data-for="cm"].ou-yeah-current-module .courseindex-link {
+        color: #25305d !important;
+        font-weight: 750 !important;
       }
 
       #${COURSE_MAP_TOOLS_ID} {
@@ -838,47 +1007,47 @@
         top: 0;
         z-index: 5;
         display: grid;
-        gap: 10px;
-        margin: 0 0 10px;
-        padding: 12px;
+        gap: 6px;
+        margin: 0 2px 8px;
+        padding: 8px 9px;
         border: 1px solid var(--ou-course-line);
-        border-radius: 9px;
-        background: rgba(255, 255, 255, 0.96);
-        box-shadow: 0 10px 24px rgba(24, 39, 75, 0.08);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 6px 14px rgba(24, 39, 75, 0.06);
         backdrop-filter: blur(10px);
       }
 
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-heading {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
-        gap: 10px;
+        gap: 8px;
       }
 
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-kicker {
         display: block;
         color: var(--ou-course-brand);
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 700;
-        line-height: 1.1;
+        line-height: 1;
       }
 
       #${COURSE_MAP_TOOLS_ID} h2 {
-        margin: 2px 0 0;
+        margin: 1px 0 0;
         color: var(--ou-course-ink);
-        font-size: 19px;
+        font-size: 14px;
         font-weight: 700;
-        line-height: 1.1;
+        line-height: 1.05;
       }
 
       #${COURSE_MAP_TOOLS_ID} button {
-        min-height: 30px;
-        padding: 0 10px;
+        min-height: 25px;
+        padding: 0 8px;
         border: 1px solid #d9deec;
         border-radius: 7px;
         background: #fff;
         color: #455ba9;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 650;
         cursor: pointer;
       }
@@ -890,25 +1059,28 @@
 
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-search {
         display: grid;
-        gap: 5px;
+        gap: 0;
         margin: 0;
       }
 
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-search span {
-        color: var(--ou-course-muted);
-        font-size: 10px;
-        font-weight: 650;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
       }
 
       #${COURSE_MAP_TOOLS_ID} input {
         width: 100%;
-        height: 36px;
-        padding: 0 11px;
+        height: 30px;
+        padding: 0 10px;
         border: 1px solid #d9dde7;
         border-radius: 7px;
         background: #fff;
         color: var(--ou-course-ink);
-        font-size: 12px;
+        font-size: 11.5px;
         outline: 0;
       }
 
@@ -920,18 +1092,18 @@
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-stats {
         display: flex;
         flex-wrap: wrap;
-        gap: 5px;
+        gap: 4px;
       }
 
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-stats span {
-        min-height: 22px;
-        padding: 4px 7px;
+        min-height: 18px;
+        padding: 3px 6px;
         border-radius: 5px;
         background: #eef1f5;
         color: #606875;
-        font-size: 10px;
+        font-size: 9.5px;
         font-weight: 650;
-        line-height: 1.2;
+        line-height: 1.1;
       }
 
       #courseindex.ou-yeah-course-map {
@@ -941,7 +1113,7 @@
 
       #courseindex.ou-yeah-course-map .courseindex-section {
         position: relative;
-        margin: 0 0 5px !important;
+        margin: 0 0 2px !important;
         border-radius: 8px;
       }
 
@@ -951,16 +1123,26 @@
       }
 
       #courseindex.ou-yeah-course-map [data-ou-course-map-title] {
+        box-sizing: border-box !important;
         display: grid !important;
-        grid-template-columns: 24px 22px minmax(0, 1fr);
+        grid-template-columns: 22px 20px minmax(0, 1fr);
         align-items: center;
-        gap: 5px;
-        min-height: 34px;
-        padding: 4px 7px 4px calc(8px + (var(--ou-depth, 0) * 13px)) !important;
+        gap: 4px;
+        height: 27px !important;
+        min-height: 27px !important;
+        max-height: 27px !important;
+        padding: 1px 6px 1px calc(7px + (var(--ou-depth, 0) * 12px)) !important;
         border: 1px solid transparent;
         border-radius: 7px;
         background: transparent;
+        overflow: hidden !important;
         transition: background 140ms ease, border-color 140ms ease;
+      }
+
+      #courseindex.ou-yeah-course-map [data-ou-course-map-title] > * {
+        min-height: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
       }
 
       #courseindex.ou-yeah-course-map [data-ou-course-map-depth="1"] > [data-ou-course-map-title] {
@@ -982,7 +1164,14 @@
       }
 
       #courseindex.ou-yeah-course-map .courseindex-section.ou-yeah-current-section > [data-ou-course-map-title] {
+        border-color: rgba(82, 105, 199, 0.34);
+        background: linear-gradient(90deg, rgba(82, 105, 199, 0.14), rgba(82, 105, 199, 0.045)) !important;
         box-shadow: inset 3px 0 0 var(--ou-course-brand);
+      }
+
+      #courseindex.ou-yeah-course-map .courseindex-section.ou-yeah-current-section > [data-ou-course-map-title] .courseindex-link {
+        color: #27346a !important;
+        font-weight: 760;
       }
 
       #courseindex.ou-yeah-course-map [data-ou-course-map-title]::before {
@@ -991,12 +1180,12 @@
         grid-row: 1;
         display: inline-grid;
         place-items: center;
-        width: 24px;
-        height: 22px;
+        width: 22px;
+        height: 18px;
         border-radius: 5px;
         background: #edf1ff;
         color: #455ba9;
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 750;
         line-height: 1;
       }
@@ -1006,9 +1195,9 @@
         grid-column: 2;
         grid-row: 1;
         place-items: center;
-        width: 22px;
-        height: 22px;
-        min-width: 22px;
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
         margin: 0 !important;
         border-radius: 6px;
         color: #697386;
@@ -1025,33 +1214,46 @@
         text-overflow: ellipsis !important;
         white-space: nowrap !important;
         color: #242a34 !important;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 620;
-        line-height: 1.28;
+        line-height: 1.18;
         text-decoration: none !important;
       }
 
       #courseindex.ou-yeah-course-map .courseindex-item-content {
-        margin-left: 12px;
-        padding-left: 8px;
+        display: grid !important;
+        gap: 1px;
+        margin: 1px 0 3px 13px !important;
+        padding: 1px 0 1px 7px !important;
         border-left: 1px solid #e2e6ee;
       }
 
+      #courseindex.ou-yeah-course-map .courseindex-item-content.collapse:not(.show),
+      #courseindex.ou-yeah-course-map .courseindex-sectioncontent.collapse:not(.show),
+      #courseindex.ou-yeah-course-map .courseindex-item-content[aria-hidden="true"],
+      #courseindex.ou-yeah-course-map .courseindex-sectioncontent[aria-hidden="true"] {
+        display: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+      }
+
       #courseindex.ou-yeah-course-map .courseindex-sectioncontent {
-        display: grid;
-        gap: 2px;
-        margin: 3px 0 6px !important;
+        display: grid !important;
+        gap: 1px;
+        margin: 1px 0 3px !important;
         padding: 0 !important;
       }
 
       #courseindex.ou-yeah-course-map [data-for="cm"] {
         position: relative;
         display: grid !important;
-        grid-template-columns: 34px minmax(0, 1fr);
+        grid-template-columns: 29px minmax(0, 1fr);
         align-items: center;
-        gap: 7px;
-        min-height: 31px;
-        padding: 2px 7px !important;
+        gap: 5px;
+        min-height: 25px;
+        margin: 0 !important;
+        padding: 1px 6px !important;
         border-radius: 6px;
       }
 
@@ -1065,12 +1267,12 @@
         grid-row: 1;
         display: inline-grid;
         place-items: center;
-        width: 32px;
-        height: 19px;
+        width: 27px;
+        height: 17px;
         border-radius: 5px;
         background: #eef1f5;
         color: #626b78;
-        font-size: 8px;
+        font-size: 7.5px;
         font-weight: 750;
         line-height: 1;
       }
@@ -1108,7 +1310,7 @@
         text-overflow: ellipsis !important;
         white-space: nowrap !important;
         color: #4b5360 !important;
-        font-size: 11px;
+        font-size: 10.75px;
         font-weight: 520;
         line-height: 1.22;
       }
