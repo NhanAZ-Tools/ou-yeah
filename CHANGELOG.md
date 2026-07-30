@@ -1,5 +1,9 @@
 # Changelog
 
+## Chưa phát hành
+
+- Biến section đầu khóa học ELOLMS thành nhóm `Chung` có thể thu gọn/mở rộng; đồng bộ hai tài nguyên mặc định như `Thông báo` và `Thảo luận chung` với nút điều khiển tất cả.
+
 ## 2.2.0 - 2026-07-30
 
 - Thêm exporter diễn đàn ELOLMS: xuất toàn bộ diễn đàn/kênh thông báo hoặc từng chủ đề thành ZIP AI-ready gồm `forum.md`, `forum.json`, ảnh nội dung và tài liệu Moodle đính kèm theo thư mục tương đối.

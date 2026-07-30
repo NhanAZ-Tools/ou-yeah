@@ -279,6 +279,18 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /ou-yeah-current-section/);
   assert.match(source, /classifyCourseMapModule/);
   assert.match(source, /applyDefaultCollapsedCourseSections\(\)/);
+  assert.match(source, /ensureGeneralCourseSection\(\);\s+applyDefaultCollapsedCourseSections\(\);/);
+  assert.match(source, /COURSE_GENERAL_TOGGLE_ID = "ou-yeah-general-section-toggle"/);
+  assert.match(source, /title\.textContent = "Chung"/);
+  assert.match(source, /scheduleGeneralCourseSectionGlobalSync\(globalToggle\)/);
+  assert.match(source, /setGeneralCourseSectionExpanded\(isCourseSectionToggleOpen\(globalToggle\)\)/);
+  assert.match(source, /window\.setTimeout\(sync, 0\)/);
+  assert.match(source, /window\.setTimeout\(sync, 520\)/);
+  assert.match(source, /setGeneralCourseSectionExpanded\(false\)/);
+  assert.match(source, /content\.classList\.remove\("collapsing"\)/);
+  assert.match(source, /content\.style\.removeProperty\("height"\)/);
+  assert.match(source, /content\.hidden = !expanded/);
+  assert.match(source, /syncGeneralCourseSectionToggle\(section\)/);
   assert.match(source, /getCourseSectionCollapseToggles/);
   assert.match(source, /annotateOpenCourseSections\(\)/);
   assert.match(source, /isCourseSectionExpanded/);
@@ -373,6 +385,7 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /box-shadow: inset 4px 0 0 var\(--ou-course-brand\);/);
   assert.match(source, /border-left: 3px solid rgba\(82, 105, 199, 0\.35\);/);
   assert.match(source, /body\.ou-yeah-course-view \.course-content \.sectionname/);
+  assert.match(source, /#section-0\.ou-yeah-general-section/);
   assert.match(source, /font-size: clamp\(13\.25px, 0\.88vw, 15\.5px\) !important;/);
   assert.match(source, /font-size: clamp\(14px, 0\.98vw, 16\.5px\) !important;/);
   assert.match(source, /white-space: nowrap !important;/);

@@ -46,6 +46,7 @@
   const COURSE_MAP_STYLE_ID = "ou-yeah-course-map-theme";
   const COURSE_MAP_TOOLS_ID = "ou-yeah-course-map-tools";
   const COURSE_MAP_RESIZE_HANDLE_CLASS = "ou-course-map-resize-handle";
+  const COURSE_GENERAL_TOGGLE_ID = "ou-yeah-general-section-toggle";
   const COURSE_MAP_WIDTH_STORAGE_KEY = "ouYeahCourseMapWidth";
   const COURSE_MAP_DEFAULT_WIDTH = 390;
   const COURSE_MAP_MIN_WIDTH = 320;
@@ -238,6 +239,8 @@
     const globalToggle = target.closest("#collapsesections, .section-collapsemenu, [data-toggle='toggleall'], [data-bs-toggle='toggleall']");
     if (!sectionToggle && !globalToggle) return;
 
+    if (globalToggle instanceof HTMLElement) scheduleGeneralCourseSectionGlobalSync(globalToggle);
+
     if (!courseMapDefaultCollapseInProgress && event.isTrusted) {
       courseMapUserToggledSections = true;
     }
@@ -335,6 +338,7 @@
 
     if (!IS_ELOLMS_COURSE_VIEW) return;
 
+    ensureGeneralCourseSection();
     applyDefaultCollapsedCourseSections();
     annotateOpenCourseSections();
     ensureCourseMapTools(drawer, courseIndex);
@@ -667,6 +671,99 @@
     return depth;
   }
 
+  function ensureGeneralCourseSection() {
+    const section = document.querySelector(".course-content #section-0.course-section");
+    if (!(section instanceof HTMLElement)) return null;
+
+    const header = section.querySelector(":scope > .course-section-header");
+    const content = section.querySelector(":scope > .content, :scope > .course-section-content");
+    if (!(header instanceof HTMLElement) || !(content instanceof HTMLElement)) return null;
+
+    section.classList.add("ou-yeah-general-section");
+    if (!content.id) content.id = "coursecontentcollapse0";
+    content.classList.add("collapse");
+
+    let toggle = document.getElementById(COURSE_GENERAL_TOGGLE_ID);
+    if (!(toggle instanceof HTMLElement) || !section.contains(toggle)) {
+      const host = header.querySelector(":scope > .d-flex.align-items-start.position-relative");
+      if (!(host instanceof HTMLElement)) return null;
+
+      const titleRow = document.createElement("div");
+      titleRow.className = "d-flex align-items-start position-relative ou-yeah-general-section-title";
+
+      toggle = document.createElement("a");
+      toggle.id = COURSE_GENERAL_TOGGLE_ID;
+      toggle.className = "btn btn-icon mr-1 icons-collapse-expand justify-content-center stretched-link";
+      toggle.setAttribute("href", `#${content.id}`);
+      toggle.setAttribute("role", "button");
+      toggle.setAttribute("aria-controls", content.id);
+      toggle.setAttribute("aria-label", "Chung");
+      toggle.innerHTML = `
+        <span class="expanded-icon icon-no-margin p-2" title="Thu gọn">
+          <i class="icon fa fa-chevron-down fa-fw" aria-hidden="true"></i>
+        </span>
+        <span class="collapsed-icon icon-no-margin p-2" title="Mở rộng">
+          <span class="dir-rtl-hide"><i class="icon fa fa-chevron-right fa-fw" aria-hidden="true"></i></span>
+          <span class="dir-ltr-hide"><i class="icon fa fa-chevron-left fa-fw" aria-hidden="true"></i></span>
+        </span>
+      `;
+      toggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.isTrusted) courseMapUserToggledSections = true;
+        setGeneralCourseSectionExpanded(!isCollapseContentOpen(content));
+        scheduleCourseMapRefresh();
+      });
+
+      const title = document.createElement("h3");
+      title.className = "sectionname course-content-item d-flex align-self-stretch align-items-center mb-0";
+      title.dataset.ouGeneralSectionTitle = "true";
+      title.textContent = "Chung";
+
+      titleRow.append(toggle, title);
+      host.appendChild(titleRow);
+    }
+
+    syncGeneralCourseSectionToggle(section);
+    return section;
+  }
+
+  function setGeneralCourseSectionExpanded(expanded) {
+    const section = document.querySelector(".course-content #section-0.course-section");
+    const content = section?.querySelector(":scope > .content, :scope > .course-section-content");
+    if (!(section instanceof HTMLElement) || !(content instanceof HTMLElement)) return;
+
+    content.classList.remove("collapsing");
+    content.classList.add("collapse");
+    content.classList.toggle("show", expanded);
+    content.style.removeProperty("height");
+    content.hidden = !expanded;
+    content.setAttribute("aria-hidden", String(!expanded));
+    section.classList.toggle("ou-yeah-section-open", expanded);
+    syncGeneralCourseSectionToggle(section);
+  }
+
+  function scheduleGeneralCourseSectionGlobalSync(globalToggle) {
+    const sync = () => {
+      if (!globalToggle.isConnected) return;
+      setGeneralCourseSectionExpanded(isCourseSectionToggleOpen(globalToggle));
+    };
+
+    window.setTimeout(sync, 0);
+    window.setTimeout(sync, 120);
+    window.setTimeout(sync, 520);
+  }
+
+  function syncGeneralCourseSectionToggle(section) {
+    const toggle = section.querySelector(`#${COURSE_GENERAL_TOGGLE_ID}`);
+    const content = section.querySelector(":scope > .content, :scope > .course-section-content");
+    if (!(toggle instanceof HTMLElement) || !(content instanceof HTMLElement)) return;
+
+    const expanded = isCollapseContentOpen(content);
+    toggle.classList.toggle("collapsed", !expanded);
+    toggle.setAttribute("aria-expanded", String(expanded));
+  }
+
   function annotateOpenCourseSections() {
     document.querySelectorAll(".course-content .course-section").forEach((section) => {
       if (!(section instanceof HTMLElement)) return;
@@ -683,19 +780,22 @@
     if (courseMapDefaultCollapseApplied || courseMapUserToggledSections) return;
 
     const toggles = getCourseSectionCollapseToggles();
-    if (!toggles.length) return;
+    const generalContent = document.querySelector(".course-content #section-0.course-section > .content, .course-content #section-0.course-section > .course-section-content");
+    if (!toggles.length && !(generalContent instanceof HTMLElement)) return;
 
     const openToggles = toggles.filter((toggle) => isCourseSectionToggleOpen(toggle));
     const openContents = Array.from(document.querySelectorAll(".course-content .course-section > .content.collapse.show, .course-content .course-section > .course-section-content.collapse.show"))
       .filter((content) => content instanceof HTMLElement && content.closest("#section-0") == null);
+    const generalOpen = generalContent instanceof HTMLElement && isCollapseContentOpen(generalContent);
 
-    if (!openToggles.length && !openContents.length) {
+    if (!openToggles.length && !openContents.length && !generalOpen) {
       courseMapDefaultCollapseApplied = true;
       return;
     }
 
     courseMapDefaultCollapseApplied = true;
     courseMapDefaultCollapseInProgress = true;
+    setGeneralCourseSectionExpanded(false);
 
     const globalToggle = document.querySelector("#collapsesections, .section-collapsemenu[data-toggle='toggleall'], .section-collapsemenu[data-bs-toggle='toggleall']");
     if (globalToggle instanceof HTMLElement && isCourseSectionToggleOpen(globalToggle)) {
@@ -1394,6 +1494,29 @@
         font-weight: 700;
         line-height: 1;
         pointer-events: none;
+      }
+
+      body.ou-yeah-course-view .course-content #section-0.ou-yeah-general-section > .course-section-header > .d-flex:first-child {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+
+      body.ou-yeah-course-view .course-content #section-0.ou-yeah-general-section .ou-yeah-general-section-title {
+        min-width: 0;
+        align-items: center !important;
+      }
+
+      body.ou-yeah-course-view .course-content #section-0.ou-yeah-general-section #collapsesections {
+        position: relative;
+        z-index: 2;
+      }
+
+      body.ou-yeah-course-view .course-content #section-0.ou-yeah-general-section.ou-yeah-section-open > .course-section-header {
+        padding-right: 0 !important;
+      }
+
+      body.ou-yeah-course-view .course-content #section-0.ou-yeah-general-section.ou-yeah-section-open > .course-section-header::after {
+        display: none !important;
       }
 
       body.ou-yeah-course-view .course-content .course-section.ou-yeah-section-open > .content {
