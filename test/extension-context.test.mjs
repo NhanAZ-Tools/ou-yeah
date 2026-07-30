@@ -430,6 +430,48 @@ test("release metadata and packaging script are version aligned", async () => {
   assert.equal(packageJson.scripts["pack:extension"], "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1");
   assert.equal(packageJson.scripts.release, "npm run check && npm run pack:extension");
   assert.match(releaseScript, /OU-Yeah-v\$version/);
+  assert.match(releaseScript, /src\/forum-export\.js/);
   assert.match(releaseScript, /Get-FileHash -LiteralPath \$zipPath -Algorithm SHA256/);
   assert.match(releaseScript, /Release archive is missing/);
+});
+
+test("forum exporter supports whole-forum and single-topic AI-ready bundles", async () => {
+  const source = await readFile(new URL("../src/forum-export.js", import.meta.url), "utf8");
+  const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
+  const primaryScripts = manifest.content_scripts[0].js;
+
+  assert.deepEqual(primaryScripts.slice(-2), ["src/content.js", "src/forum-export.js"]);
+  assert.match(source, /data-ou-forum-export="\$\{scope\}"/);
+  assert.match(source, /button\.dataset\.ouForumExport = "row"/);
+  assert.match(source, /exportWholeForum\(sourceUrl\)/);
+  assert.match(source, /exportSingleTopic\(sourceUrl\)/);
+  assert.match(source, /table\.discussion-list/);
+  assert.match(source, /doc\.querySelectorAll\("article"\)/);
+  assert.match(source, /\.post-content-container/);
+  assert.match(source, /replyToPostId/);
+  assert.match(source, /credentials: "include"/);
+  assert.match(source, /user\\\/icon/);
+  assert.match(source, /attachAttachmentAssets\(exported\)/);
+  assert.match(source, /attachments\/\$\{reference\.topic\.slug\}/);
+  assert.match(source, /attachment\.assetPath = downloaded\?\.assetPath/);
+  assert.match(source, /injectForumExportTheme\(\);\s+mountForumExportControls\(\);/);
+  assert.match(source, /if \(mountTimer\) return;/);
+  assert.match(source, /mountTimer = 0;/);
+});
+
+test("forum exporter writes Markdown, JSON and local images into a real ZIP layout", async () => {
+  const source = await readFile(new URL("../src/forum-export.js", import.meta.url), "utf8");
+
+  assert.match(source, /textZipFile\("README\.md"/);
+  assert.match(source, /textZipFile\("forum\.md"/);
+  assert.match(source, /textZipFile\("forum\.json"/);
+  assert.match(source, /`images\/\$\{reference\.topic\.slug\}/);
+  assert.match(source, /exported\.attachmentFiles\.forEach/);
+  assert.match(source, /files\.push\(\{ name: attachment\.assetPath, data: attachment\.data \}\)/);
+  assert.match(source, /`attachments:/);
+  assert.match(source, /0x04034b50/);
+  assert.match(source, /0x02014b50/);
+  assert.match(source, /0x06054b50/);
+  assert.match(source, /new Blob\(\[\.\.\.localParts, \.\.\.centralParts, end\]/);
+  assert.match(source, /application\/zip/);
 });

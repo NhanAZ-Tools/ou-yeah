@@ -17,6 +17,7 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 - Hiển thị progress bar mượt, phần trăm tải trang, trạng thái tạo PDF và kết quả ngay trên mini-toolbar.
 - Nâng cấp trang thông báo ELOLMS với tìm kiếm, lọc chưa đọc/loại/môn học, nhóm theo thời gian và bố cục một cột responsive.
 - Làm lại TOC/Course Map trong trang khóa học ELOLMS: gọn hơn, phân cấp rõ hơn, có tìm nhanh, badge loại tài nguyên và highlight mục đang xem.
+- Xuất toàn bộ diễn đàn/kênh thông báo hoặc từng chủ đề riêng lẻ thành gói ZIP AI-ready, gồm Markdown, JSON có cấu trúc, ảnh và tài liệu đính kèm gốc.
 
 ## Cài đặt thủ công
 
@@ -34,6 +35,8 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 - Bấm nút tốc độ để chọn nhanh tốc độ phát.
 - Bấm nút tải xuống sau khi video đã phát vài giây.
 - Trên trang đọc sách, bấm `Tải PDF` trong mini-toolbar tối nổi phía trên thanh công cụ màu xanh. Giữ trang mở đến khi Chrome báo đã gửi PDF sang Downloads.
+- Trên trang danh sách diễn đàn, bấm `Xuất toàn bộ` để gom mọi chủ đề hoặc bấm `Xuất` ngay tại từng dòng. Trên trang thảo luận riêng, bấm `Xuất chủ đề`.
+- Gói diễn đàn chứa `forum.md` để đọc/nạp vào AI, `forum.json` để xử lý quan hệ phản hồi chính xác, `images/` chứa ảnh nội dung (không lấy avatar) và `attachments/` chứa PDF, Word, Excel, PowerPoint hoặc tệp đính kèm Moodle khác. Kiểm tra dữ liệu cá nhân trước khi chia sẻ gói này cho dịch vụ AI.
 - Phím tắt khi focus video/fullscreen:
   - `Alt + ←`: tua ngược 5 giây
   - `Alt + →`: tua nhanh 5 giây
@@ -57,6 +60,7 @@ Tiện ích không được thiết kế để vượt DRM, phá mã hóa, vư�
 - Nếu stream có DRM hoặc mã hóa, extension không giải mã hoặc vượt bảo vệ.
 - Nếu chưa bắt được link tải, hãy bấm Play video vài giây rồi thử lại.
 - PDF được tạo từ ảnh trang mà viewer cung cấp, nên sách nhiều trang có thể cần thêm thời gian và bộ nhớ để hoàn tất.
+- Xuất toàn diễn đàn cần đọc tuần tự các trang/chủ đề bằng phiên đăng nhập hiện tại. Diễn đàn nhiều bài hoặc nhiều ảnh có thể tạo tệp ZIP lớn; các ảnh không tải được vẫn giữ URL gốc và được ghi trong mục cảnh báo.
 
 ## Kiểm tra mã nguồn
 

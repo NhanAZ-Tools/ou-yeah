@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0 - 2026-07-30
+
+- Thêm exporter diễn đàn ELOLMS: xuất toàn bộ diễn đàn/kênh thông báo hoặc từng chủ đề thành ZIP AI-ready gồm `forum.md`, `forum.json`, ảnh nội dung và tài liệu Moodle đính kèm theo thư mục tương đối.
+- Giữ metadata khóa học/diễn đàn, tác giả, thời gian, permalink, cây phản hồi, bảng, danh sách và liên kết; tải PDF, Word, Excel, PowerPoint cùng các tệp đính kèm khác nhưng không thu thập avatar người dùng.
+- Thêm nút xuất đồng bộ giao diện OU Yeah!, tiến trình đọc chủ đề/tải ảnh/đóng gói và cơ chế tiếp tục khi một chủ đề hoặc ảnh riêng lẻ bị lỗi.
+
 ## 2.1.0 - 2026-07-26
 
 - Nâng cấp TOC/course index ELOLMS thành Course Map gọn hơn, có tìm nhanh, phân cấp rõ, badge loại tài nguyên và highlight mục đang xem.

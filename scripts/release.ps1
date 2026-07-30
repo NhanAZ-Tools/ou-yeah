@@ -48,6 +48,7 @@ try {
     $requiredEntries = @(
       "manifest.json",
       "src/content.js",
+      "src/forum-export.js",
       "src/background.js",
       "src/offscreen.js",
       "src/notifications.js",
