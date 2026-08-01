@@ -2,6 +2,7 @@
 
 ## Chưa phát hành
 
+- Chuẩn hóa toàn bộ giờ hiển thị trên `elolms.ou.edu.vn` từ AM/PM sang định dạng 24 giờ; áp dụng cả nội dung Moodle tải động nhưng không can thiệp ô soạn thảo hay đoạn mã.
 - Biến section đầu khóa học ELOLMS thành nhóm `Chung` có thể thu gọn/mở rộng; đồng bộ hai tài nguyên mặc định như `Thông báo` và `Thảo luận chung` với nút điều khiển tất cả.
 - Thêm Quiz Lab một nút cho bài tự đánh giá: tự chạy đến khi 3 lượt liên tiếp không xuất hiện câu mới (tối đa 50 lượt), chọn phương án đầu tiên, nộp tuần tự, đọc đáp án đúng từ trang xem lại và xuất ZIP AI-ready gồm Markdown, JSON cùng ảnh câu hỏi.
 - Chuẩn hóa fingerprint câu hỏi trước khi so sánh, nên việc Moodle xáo trộn thứ tự đáp án không còn tạo câu trùng hoặc kéo dài quá trình quét giả tạo; dữ liệu Quiz Lab cũ cũng được tự gộp lại khi tải.

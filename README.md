@@ -11,6 +11,7 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 - Tải video nếu trang cung cấp file trực tiếp hoặc HLS không mã hóa.
 - Tự inject vào iframe Vimeo, dùng được khi học video ELOLMS.
 - Thanh điều khiển tối gọn, dùng xanh OU tiết chế và bộ chữ [Space Grotesk từ best-fonts](https://github.com/NhanAZ-Web/best-fonts/tree/main/SpaceGrotesk) thống nhất.
+- Chuẩn hóa giờ hiển thị trên toàn bộ ELOLMS sang định dạng 24 giờ, kể cả lịch, thông báo, popover và nội dung được tải động sau khi mở trang.
 - Cố gắng hiện / ẩn cùng thanh điều khiển gốc của Vimeo.
 - Thêm mini-toolbar tải PDF nổi theo cùng giao diện với thanh điều khiển video trên các trang `https://thuquan.ou.edu.vn/doc-truc-tuyen/sach/*`.
 - Tự tải ảnh JPEG của từng trang, giữ nguyên thứ tự và đóng gói thành một tệp PDF.

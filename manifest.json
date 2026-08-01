@@ -30,6 +30,7 @@
         "https://thuquan.ou.edu.vn/doc-truc-tuyen/sach/*"
       ],
       "js": [
+        "src/time-format.js",
         "src/content.js",
         "src/forum-export.js",
         "src/quiz-trainer.js"

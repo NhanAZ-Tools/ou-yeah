@@ -47,6 +47,7 @@ try {
     $entries = $archive.Entries | ForEach-Object { $_.FullName.Replace("\", "/") }
     $requiredEntries = @(
       "manifest.json",
+      "src/time-format.js",
       "src/content.js",
       "src/forum-export.js",
       "src/quiz-trainer.js",

@@ -174,6 +174,54 @@ test("ELOLMS pages get a global Space Grotesk font layer", async () => {
   assert.match(source, /:not\(\.icon\):not\(\.material-icons\):not\(\.material-symbols-outlined\)/);
 });
 
+test("ELOLMS times are normalized to 24-hour format across dynamic page content", async () => {
+  const source = await readFile(new URL("../src/time-format.js", import.meta.url), "utf8");
+  const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
+  const releaseScript = await readFile(new URL("../scripts/release.ps1", import.meta.url), "utf8");
+
+  class FakeElement {
+    closest() { return null; }
+    getAttribute() { return null; }
+    setAttribute() {}
+  }
+  class FakeText {}
+  class FakeMutationObserver {
+    observe() {}
+  }
+
+  const context = vm.createContext({
+    Element: FakeElement,
+    MutationObserver: FakeMutationObserver,
+    NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 },
+    Text: FakeText,
+    document: {
+      documentElement: new FakeElement(),
+      createTreeWalker() {
+        return { nextNode: () => null };
+      }
+    },
+    location: { hostname: "elolms.ou.edu.vn" },
+    window: {}
+  });
+
+  vm.runInContext(source, context, { filename: "src/time-format.js" });
+  const format = context.window.__ouYeahFormat24HourText;
+
+  assert.equal(format("7:00 PM"), "19:00");
+  assert.equal(format("1:05 AM"), "01:05");
+  assert.equal(format("12:00 AM"), "00:00");
+  assert.equal(format("12:00 PM"), "12:00");
+  assert.equal(format("Mở 10:00 AM, hạn 11:55 PM."), "Mở 10:00, hạn 23:55.");
+  assert.equal(format("Ghi lúc 7:05:09 p.m."), "Ghi lúc 19:05:09");
+  assert.equal(format("13:00 PM và ExamplePM"), "13:00 PM và ExamplePM");
+  assert.equal(manifest.content_scripts[0].js[0], "src/time-format.js");
+  assert.match(source, /new MutationObserver/);
+  assert.match(source, /characterData: true/);
+  assert.match(source, /attributeFilter: OBSERVED_ATTRIBUTES/);
+  assert.match(source, /\[contenteditable\]/);
+  assert.match(releaseScript, /src\/time-format\.js/);
+});
+
 test("notifications render list items as compact single-line rows", async () => {
   const css = await readFile(new URL("../src/notifications.css", import.meta.url), "utf8");
 
@@ -513,7 +561,7 @@ test("practice quiz trainer scans until the question bank stabilizes and exports
   assert.match(source, /"Tạm dừng"/);
   assert.match(source, /"Tiếp tục quét"/);
   assert.match(source, /"Quét bổ sung"/);
-  assert.match(source, /"Tải bộ đề ZIP"/);
+  assert.match(source, /"Tải bộ đề"/);
   assert.match(source, /src\/icons\/pause\.svg/);
   assert.match(source, /src\/icons\/play\.svg/);
   assert.match(releaseScript, /src\/icons\/pause\.svg/);
