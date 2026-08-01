@@ -79,7 +79,7 @@
           <span class="ou-yeah-quiz-trainer-status" data-ou-quiz-status>Tự dừng sau ${NO_NEW_QUESTION_STREAK_LIMIT} lượt liên tiếp không có câu mới.</span>
         </div>
         <div class="ou-yeah-quiz-trainer-actions">
-          <button type="button" class="ou-yeah-quiz-trainer-export" data-ou-quiz-export hidden>Tải bộ đề ZIP</button>
+          <button type="button" class="ou-yeah-quiz-trainer-export" data-ou-quiz-export hidden>Tải bộ đề</button>
           <button type="button" class="ou-yeah-quiz-trainer-action" data-ou-quiz-action>
             Bắt đầu quét bộ đề
           </button>
@@ -958,7 +958,7 @@
     }
     if (exportButton instanceof HTMLButtonElement) {
       exportButton.hidden = !state?.questions?.length || isBusy;
-      exportButton.textContent = currentStatus === "complete" ? "Tải bộ đề ZIP" : "Tải bộ đề hiện có";
+      exportButton.textContent = currentStatus === "complete" ? "Tải bộ đề" : "Tải bộ đề hiện có";
       exportButton.dataset.icon = "download";
     }
     setNavigationGuard(isBusy);
