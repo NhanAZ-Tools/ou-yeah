@@ -1782,8 +1782,9 @@
 
   function classifyNotificationPopoverItem(message) {
     const normalized = normalizeNotificationPopoverText(message);
-    if (/video conference|zoom|google meet|lich hoc|thoi gian to chuc|hop truc tuyen/.test(normalized)) return "meeting";
+    // A forum reply may mention a meeting title; classify the reply event first.
     if (/tra loi:|thao luan|dien dan|forum|chu de|nhom\s*\d+/.test(normalized)) return "discussion";
+    if (/video conference|zoom|google meet|lich hoc|thoi gian to chuc|hop truc tuyen/.test(normalized)) return "meeting";
     if (/da nop|nop bai|bai tap lon|assignment|quiz|deadline|han nop/.test(normalized)) return "assignment";
     if (/thong bao|announcement|giang vien|thay|co |kiem tra|de lam tot/.test(normalized)) return "announcement";
     return "system";

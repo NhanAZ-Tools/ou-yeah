@@ -264,6 +264,16 @@ test("notification classification keeps exam guidance as announcement", async ()
   assert.match(source, /thong bao\|announcement\|giang vien\|thay\|co \|kiem tra\|de lam tot/);
 });
 
+test("notification replies take precedence over meeting keywords", async () => {
+  const pageSource = await readFile(new URL("../src/notifications.js", import.meta.url), "utf8");
+  const popoverSource = await readFile(new URL("../src/content.js", import.meta.url), "utf8");
+  const discussionRule = /tra loi:\|thao luan\|dien dan\|forum\|chu de\|nhom\\s\\*\\d\+/;
+  const meetingRule = /video conference\|zoom\|google meet\|lich hoc\|thoi gian to chuc\|hop truc tuyen/;
+
+  assert.ok(pageSource.search(discussionRule) < pageSource.search(meetingRule));
+  assert.ok(popoverSource.search(discussionRule) < popoverSource.search(meetingRule));
+});
+
 test("notification detail go-to action is compact and right aligned", async () => {
   const css = await readFile(new URL("../src/notifications.css", import.meta.url), "utf8");
 
