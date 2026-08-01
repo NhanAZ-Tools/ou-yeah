@@ -18,6 +18,7 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 - Nâng cấp trang thông báo ELOLMS với tìm kiếm, lọc chưa đọc/loại/môn học, nhóm theo thời gian và bố cục một cột responsive.
 - Làm lại TOC/Course Map trong trang khóa học ELOLMS: gọn hơn, phân cấp rõ hơn, có tìm nhanh, badge loại tài nguyên và highlight mục đang xem.
 - Xuất toàn bộ diễn đàn/kênh thông báo hoặc từng chủ đề riêng lẻ thành gói ZIP AI-ready, gồm Markdown, JSON có cấu trúc, ảnh và tài liệu đính kèm gốc.
+- Tạo bộ ôn tập từ quiz tự đánh giá bằng một nút: tự làm và nộp bài cho đến khi 3 lượt liên tiếp không xuất hiện câu mới, gom đáp án đúng rồi đóng gói Markdown, JSON cùng ảnh câu hỏi thành ZIP AI-ready. Tiến trình chạy trong trang nền cùng ELOLMS nên tab chính không reload/nhấp nháy, vẫn dùng được nút `Dừng`; có trần an toàn 50 lượt để tránh vòng lặp vô hạn.
 
 ## Cài đặt thủ công
 
@@ -37,6 +38,7 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 - Trên trang đọc sách, bấm `Tải PDF` trong mini-toolbar tối nổi phía trên thanh công cụ màu xanh. Giữ trang mở đến khi Chrome báo đã gửi PDF sang Downloads.
 - Trên trang danh sách diễn đàn, bấm `Xuất toàn bộ` để gom mọi chủ đề hoặc bấm `Xuất` ngay tại từng dòng. Trên trang thảo luận riêng, bấm `Xuất chủ đề`.
 - Gói diễn đàn chứa `forum.md` để đọc/nạp vào AI, `forum.json` để xử lý quan hệ phản hồi chính xác, `images/` chứa ảnh nội dung (không lấy avatar) và `attachments/` chứa PDF, Word, Excel, PowerPoint hoặc tệp đính kèm Moodle khác. Kiểm tra dữ liệu cá nhân trước khi chia sẻ gói này cho dịch vụ AI.
+- Trên trang quiz tự đánh giá, bấm `Bắt đầu quét bộ đề` trong bảng `OU Yeah! Quiz Lab`. Tiện ích xử lý các lượt trong một trang nền cùng domain, còn trang đang nhìn được giữ nguyên để theo dõi hoặc bấm `Tạm dừng`; sau đó có thể `Tiếp tục quét` mà không mất câu đã gom. Bạn có thể đổi sang tab khác nhưng nên giữ tab quiz mở; nếu reload, đóng tab hoặc rời trang khi đang quét/đóng gói, Chrome sẽ hỏi xác nhận. Khi tải xong `quiz-bank.zip`, bảng kết quả tự thu thành một hàng gọn với `Tải bộ đề ZIP` và `Quét bổ sung`; quét bổ sung giữ nguyên ngân hàng hiện tại rồi tìm thêm câu mới.
 - Phím tắt khi focus video/fullscreen:
   - `Alt + ←`: tua ngược 5 giây
   - `Alt + →`: tua nhanh 5 giây
@@ -61,6 +63,7 @@ Tiện ích không được thiết kế để vượt DRM, phá mã hóa, vư�
 - Nếu chưa bắt được link tải, hãy bấm Play video vài giây rồi thử lại.
 - PDF được tạo từ ảnh trang mà viewer cung cấp, nên sách nhiều trang có thể cần thêm thời gian và bộ nhớ để hoàn tất.
 - Xuất toàn diễn đàn cần đọc tuần tự các trang/chủ đề bằng phiên đăng nhập hiện tại. Diễn đàn nhiều bài hoặc nhiều ảnh có thể tạo tệp ZIP lớn; các ảnh không tải được vẫn giữ URL gốc và được ghi trong mục cảnh báo.
+- Quiz Lab chỉ xuất hiện trên bài có dấu hiệu là quiz tự đánh giá/không tính điểm. Tính năng sẽ thực sự tạo và nộp các lượt làm bài, vì vậy chỉ dùng với bài không giới hạn lượt và không tính điểm như mô tả của giảng viên.
 
 ## Kiểm tra mã nguồn
 

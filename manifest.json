@@ -31,7 +31,8 @@
       ],
       "js": [
         "src/content.js",
-        "src/forum-export.js"
+        "src/forum-export.js",
+        "src/quiz-trainer.js"
       ],
       "run_at": "document_idle",
       "all_frames": true

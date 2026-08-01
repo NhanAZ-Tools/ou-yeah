@@ -49,12 +49,15 @@ try {
       "manifest.json",
       "src/content.js",
       "src/forum-export.js",
+      "src/quiz-trainer.js",
       "src/background.js",
       "src/offscreen.js",
       "src/notifications.js",
       "src/notifications.css",
       "src/fonts/SpaceGrotesk-Regular.ttf",
       "src/icons/inbox-in.svg",
+      "src/icons/pause.svg",
+      "src/icons/play.svg",
       "src/icons/envelope-dot.svg"
     )
 
