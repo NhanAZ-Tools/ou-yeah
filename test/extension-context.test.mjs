@@ -213,6 +213,7 @@ test("ELOLMS times are normalized to 24-hour format across dynamic page content"
   assert.equal(format("12:00 PM"), "12:00");
   assert.equal(format("Mở 10:00 AM, hạn 11:55 PM."), "Mở 10:00, hạn 23:55.");
   assert.equal(format("Ghi lúc 7:05:09 p.m."), "Ghi lúc 19:05:09");
+  assert.equal(format("Chủ nhật · 1:00 – 3:30 PM"), "Chủ nhật · 13:00 – 15:30");
   assert.equal(format("13:00 PM và ExamplePM"), "13:00 PM và ExamplePM");
   assert.equal(manifest.content_scripts[0].js[0], "src/time-format.js");
   assert.match(source, /new MutationObserver/);

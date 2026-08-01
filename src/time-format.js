@@ -15,6 +15,7 @@
     "samp",
     "[contenteditable]:not([contenteditable='false'])"
   ].join(",");
+  const TIME_RANGE_WITH_END_MERIDIEM_RE = /(^|[^\p{L}\p{N}])((?:0?[1-9]|1[0-2])):([0-5]\d)(?::([0-5]\d))?\s*([–—-])\s*((?:0?[1-9]|1[0-2])):([0-5]\d)(?::([0-5]\d))?\s*([ap])(?:\.\s*m\.|m)(?=$|[^\p{L}\p{N}])/giu;
   const TWELVE_HOUR_TIME_RE = /(^|[^\p{L}\p{N}])((?:0?[1-9]|1[0-2])):([0-5]\d)(?::([0-5]\d))?\s*([ap])(?:\.\s*m\.|m)(?=$|[^\p{L}\p{N}])/giu;
 
   if (!IS_ELOLMS) return;
@@ -58,17 +59,34 @@
   });
 
   function formatTimeText(value) {
-    return String(value || "").replace(
+    const text = String(value || "").replace(
+      TIME_RANGE_WITH_END_MERIDIEM_RE,
+      (match, prefix, startHourText, startMinuteText, startSecondText, separator, endHourText, endMinuteText, endSecondText, meridiem) => {
+        const startHour = Number.parseInt(startHourText, 10);
+        const endHour = Number.parseInt(endHourText, 10);
+        const isPm = String(meridiem).toLowerCase() === "p";
+        // Moodle sometimes renders a range as “1:00 – 3:30 PM”. The suffix
+        // applies to both endpoints when the range does not cross noon.
+        const startIsPm = isPm && startHour <= endHour;
+        return `${prefix}${to24Hour(startHour, startIsPm)}:${startMinuteText}${startSecondText ? `:${startSecondText}` : ""} ${separator} ${to24Hour(endHour, isPm)}:${endMinuteText}${endSecondText ? `:${endSecondText}` : ""}`;
+      }
+    );
+
+    return text.replace(
       TWELVE_HOUR_TIME_RE,
       (match, prefix, hourText, minuteText, secondText, meridiem) => {
         const hour = Number.parseInt(hourText, 10);
         if (!Number.isInteger(hour) || hour < 1 || hour > 12) return match;
 
-        const hour24 = hour % 12 + (String(meridiem).toLowerCase() === "p" ? 12 : 0);
+        const hour24 = to24Hour(hour, String(meridiem).toLowerCase() === "p");
         const seconds = secondText ? `:${secondText}` : "";
         return `${prefix}${String(hour24).padStart(2, "0")}:${minuteText}${seconds}`;
       }
     );
+  }
+
+  function to24Hour(hour, isPm) {
+    return String(hour % 12 + (isPm ? 12 : 0)).padStart(2, "0");
   }
 
   function rewriteSubtree(root) {
