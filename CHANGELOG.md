@@ -2,6 +2,8 @@
 
 ## Chưa phát hành
 
+## 2.2.1 - 2026-08-03
+
 - Thêm trình tải học liệu theo toàn khóa học/chương/chủ đề/phần: quét chính xác `[Xem] Video`, `[Tải về] Slide`, `[Tải về] Script`, chỉ tải link ELOLMS đang mở và hiển thị riêng các mục bị khóa cùng điều kiện tiên quyết.
 - Giữ cây thư mục và tên hiển thị trên ELOLMS trong `Downloads/OU Yeah!`, kèm hàng đợi tuần tự có tạm dừng/tiếp tục/hủy, theo dõi hoàn tất thật của Chrome và không reload tab chính.
 - Xuất `ou-yeah-course-manifest.json` làm chỉ mục AI-ready cho cây khóa học, URL nguồn, trạng thái hoàn thành/tải xuống, đường dẫn cục bộ, lỗi và điều kiện khóa; khóa học chưa đạt 100% vẫn tải được mọi tài nguyên hiện đang khả dụng.
