@@ -5,6 +5,7 @@ const MEDIA_MIME_RE = /(?:video|mpegurl|dash\+xml|mp2t)/i;
 
 const tabMedia = new Map();
 const downloadJobs = new Map();
+const trackedDownloads = new Map();
 
 function isFromSupportedPage(details) {
   return [details.initiator, details.documentUrl, details.originUrl, details.url]
@@ -63,6 +64,35 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabMedia.delete(tabId);
 });
 
+chrome.downloads.onChanged.addListener((delta) => {
+  const jobId = trackedDownloads.get(delta.id);
+  if (!jobId) return;
+
+  if (delta.state?.current === "complete") {
+    forwardProgress({
+      jobId,
+      status: "complete",
+      label: "Đã tải xong.",
+      percent: 100,
+      downloadId: delta.id
+    });
+    trackedDownloads.delete(delta.id);
+    downloadJobs.delete(jobId);
+    return;
+  }
+
+  if (delta.state?.current === "interrupted" || delta.error?.current) {
+    forwardProgress({
+      jobId,
+      status: "error",
+      label: delta.error?.current || "Tệp tải xuống đã bị gián đoạn.",
+      downloadId: delta.id
+    });
+    trackedDownloads.delete(delta.id);
+    downloadJobs.delete(jobId);
+  }
+});
+
 chrome.action.onClicked.addListener((tab) => {
   handleActionClick(tab).catch(() => {});
 });
@@ -96,8 +126,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "ou-yeah-clear-media-candidates") {
+    const tabId = sender.tab?.id;
+    if (tabId != null) tabMedia.set(tabId, []);
+    sendResponse({ ok: true });
+    return false;
+  }
+
   if (message.type === "ou-yeah-download-media") {
     respondToAsyncRequest(handleDownloadRequest(message, sender), sendResponse);
+    return true;
+  }
+
+  if (message.type === "ou-yeah-download-course-resource") {
+    respondToAsyncRequest(handleCourseResourceRequest(message, sender), sendResponse);
+    return true;
+  }
+
+  if (message.type === "ou-yeah-download-course-manifest") {
+    respondToAsyncRequest(handleCourseManifestRequest(message, sender), sendResponse);
     return true;
   }
 
@@ -174,7 +221,10 @@ async function handleDownloadRequest(message, sender) {
     return { ok: false, error: "Không tìm thấy link video hợp lệ." };
   }
 
-  const filename = sanitizeFilename(message.filename || filenameFromUrl(url, message.pageTitle));
+  const preservePath = message.courseBatch === true;
+  const filename = preservePath
+    ? sanitizeDownloadPath(message.filename || filenameFromUrl(url, message.pageTitle))
+    : sanitizeFilename(message.filename || filenameFromUrl(url, message.pageTitle));
   rememberMedia(sender.tab?.id ?? -1, url, "download-click");
 
   if (isHlsUrl(url)) {
@@ -182,7 +232,9 @@ async function handleDownloadRequest(message, sender) {
     downloadJobs.set(jobId, {
       tabId: sender.tab?.id,
       frameId: sender.frameId,
-      filename
+      filename,
+      kind: preservePath ? "course-media" : "video",
+      preservePath
     });
 
     try {
@@ -200,7 +252,114 @@ async function handleDownloadRequest(message, sender) {
     }
   }
 
+  if (preservePath) {
+    return trackedDirectDownload(url, filename, sender, "course-media", "overwrite");
+  }
+
   return directDownload(url, filename);
+}
+
+async function handleCourseResourceRequest(message, sender) {
+  if (!isElolmsSender(sender)) {
+    return { ok: false, error: "Yêu cầu tải học liệu không đến từ ELOLMS." };
+  }
+
+  const url = normalizeUrl(message.url);
+  if (!url || new URL(url).hostname !== "elolms.ou.edu.vn") {
+    return { ok: false, error: "Link học liệu ELOLMS không hợp lệ." };
+  }
+
+  const filename = sanitizeDownloadPath(message.filename || "OU Yeah!/hoc-lieu");
+  return trackedDirectDownload(url, filename, sender, "course-resource", "overwrite");
+}
+
+async function handleCourseManifestRequest(message, sender) {
+  if (!isElolmsSender(sender)) {
+    return { ok: false, error: "Yêu cầu tạo manifest không đến từ ELOLMS." };
+  }
+
+  const content = String(message.content || "");
+  if (!content || content.length > 2_000_000) {
+    return { ok: false, error: "Nội dung manifest trống hoặc quá lớn." };
+  }
+
+  const filename = sanitizeDownloadPath(message.filename || "OU Yeah!/ou-yeah-course-manifest.json");
+  const url = `data:application/json;charset=utf-8,${encodeURIComponent(content)}`;
+  return trackedDirectDownload(url, filename, sender, "course-manifest", "overwrite");
+}
+
+function isElolmsSender(sender) {
+  const senderUrl = normalizeUrl(sender.url || sender.tab?.url);
+  return Boolean(senderUrl && new URL(senderUrl).hostname === "elolms.ou.edu.vn");
+}
+
+/**
+ * @param {"uniquify"|"overwrite"|"prompt"} [conflictAction]
+ */
+async function trackedDirectDownload(url, filename, sender, kind, conflictAction = "uniquify") {
+  const jobId = crypto.randomUUID();
+  downloadJobs.set(jobId, {
+    tabId: sender.tab?.id,
+    frameId: sender.frameId,
+    filename,
+    kind
+  });
+
+  try {
+    const downloadId = await chrome.downloads.download({
+      url,
+      filename,
+      conflictAction,
+      saveAs: false
+    });
+    trackedDownloads.set(downloadId, jobId);
+
+    // Very small downloads (especially the JSON manifest) can finish between
+    // chrome.downloads.download() resolving and the onChanged listener seeing
+    // the job mapping. Reconcile the current state once so the queue never
+    // waits forever for an event that already happened.
+    const [download] = await chrome.downloads.search({ id: downloadId }).catch(() => []);
+    if (trackedDownloads.get(downloadId) === jobId && download?.state === "complete") {
+      forwardProgress({
+        jobId,
+        status: "complete",
+        label: "Đã tải xong.",
+        percent: 100,
+        downloadId
+      });
+      trackedDownloads.delete(downloadId);
+      downloadJobs.delete(jobId);
+      return { ok: true, mode: "tracked-direct", jobId, downloadId };
+    }
+
+    if (trackedDownloads.get(downloadId) === jobId && download?.state === "interrupted") {
+      forwardProgress({
+        jobId,
+        status: "error",
+        label: download.error || "Tệp tải xuống đã bị gián đoạn.",
+        downloadId
+      });
+      trackedDownloads.delete(downloadId);
+      downloadJobs.delete(jobId);
+      return { ok: false, error: download.error || "Tệp tải xuống đã bị gián đoạn." };
+    }
+
+    if (trackedDownloads.get(downloadId) !== jobId) {
+      return { ok: true, mode: "tracked-direct", jobId, downloadId };
+    }
+
+    forwardProgress({
+      jobId,
+      status: "downloading",
+      label: "Đang tải tệp...",
+      percent: 0,
+      downloadId
+    });
+    return { ok: true, mode: "tracked-direct", jobId, downloadId };
+  } catch (error) {
+    downloadJobs.delete(jobId);
+    return { ok: false, error: readableError(error) };
+  }
 }
 
 async function handleBookPdfRequest(message, sender) {
@@ -316,8 +475,10 @@ function handleHlsReady(message) {
   chrome.downloads.download(
     {
       url: message.blobUrl,
-      filename: sanitizeFilename(message.filename || job.filename),
-      conflictAction: "uniquify",
+      filename: job.preservePath
+        ? sanitizeDownloadPath(message.filename || job.filename)
+        : sanitizeFilename(message.filename || job.filename),
+      conflictAction: job.preservePath ? "overwrite" : "uniquify",
       saveAs: false
     },
     (downloadId) => {
@@ -329,6 +490,57 @@ function handleHlsReady(message) {
           status: "error",
           label: error
         });
+        downloadJobs.delete(message.jobId);
+      } else if (job.preservePath) {
+        trackedDownloads.set(downloadId, message.jobId);
+        chrome.downloads.search({ id: downloadId })
+          .catch(() => [])
+          .then(([download]) => {
+            if (trackedDownloads.get(downloadId) !== message.jobId) return;
+
+            if (download?.state === "complete") {
+              forwardProgress({
+                jobId: message.jobId,
+                status: "complete",
+                label: "Đã tải xong.",
+                percent: 100,
+                downloadId
+              });
+              trackedDownloads.delete(downloadId);
+              downloadJobs.delete(message.jobId);
+              return;
+            }
+
+            if (download?.state === "interrupted") {
+              forwardProgress({
+                jobId: message.jobId,
+                status: "error",
+                label: download.error || "Tệp video đã bị gián đoạn.",
+                downloadId
+              });
+              trackedDownloads.delete(downloadId);
+              downloadJobs.delete(message.jobId);
+              return;
+            }
+
+            forwardProgress({
+              jobId: message.jobId,
+              status: "downloading",
+              label: "Đang lưu video vào Downloads...",
+              percent: 99,
+              downloadId
+            });
+          })
+          .catch((searchError) => {
+            forwardProgress({
+              jobId: message.jobId,
+              status: "error",
+              label: readableError(searchError),
+              downloadId
+            });
+            trackedDownloads.delete(downloadId);
+            downloadJobs.delete(message.jobId);
+          });
       } else {
         forwardProgress({
           type: "ou-yeah-hls-progress",
@@ -337,13 +549,12 @@ function handleHlsReady(message) {
           label: "Đã gửi video sang Downloads.",
           downloadId
         });
+        downloadJobs.delete(message.jobId);
       }
 
       setTimeout(() => {
         revokeOffscreenObjectUrl(message.blobUrl);
       }, 60_000);
-
-      downloadJobs.delete(message.jobId);
     }
   );
 }
@@ -452,6 +663,65 @@ function sanitizeFilename(filename) {
     .replace(/\s+/g, " ")
     .trim();
   return cleaned.slice(0, 170) || "ou-yeah-video.mp4";
+}
+
+function sanitizeDownloadPath(filename) {
+  const segments = String(filename || "OU Yeah!/hoc-lieu")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => sanitizePathSegment(segment))
+    .filter(Boolean)
+    .slice(0, 12);
+
+  return compactDownloadPath(segments, 180) || "OU Yeah!/hoc-lieu";
+}
+
+function compactDownloadPath(segments, maxLength) {
+  const compacted = segments.map((segment) => String(segment));
+  let joined = compacted.join("/");
+  while (joined.length > maxLength) {
+    const directoryIndexes = compacted
+      .slice(1, -1)
+      .map((segment, offset) => ({ index: offset + 1, length: segment.length }))
+      .filter((entry) => entry.length > 10)
+      .sort((a, b) => b.length - a.length);
+    const target = directoryIndexes[0];
+    if (!target) break;
+    const excess = joined.length - maxLength;
+    compacted[target.index] = truncateDownloadSegment(
+      compacted[target.index],
+      Math.max(10, compacted[target.index].length - excess),
+      false
+    );
+    joined = compacted.join("/");
+  }
+
+  if (joined.length > maxLength && compacted.length) {
+    const leafIndex = compacted.length - 1;
+    const excess = joined.length - maxLength;
+    compacted[leafIndex] = truncateDownloadSegment(
+      compacted[leafIndex],
+      Math.max(16, compacted[leafIndex].length - excess),
+      true
+    );
+  }
+  return compacted.join("/");
+}
+
+function truncateDownloadSegment(segment, maxLength, preserveExtension) {
+  if (segment.length <= maxLength) return segment;
+  const extension = preserveExtension ? /\.[a-z0-9]{1,8}$/i.exec(segment)?.[0] || "" : "";
+  const available = Math.max(1, maxLength - extension.length - 1);
+  return `${segment.slice(0, available).trimEnd()}…${extension}`;
+}
+
+function sanitizePathSegment(segment) {
+  return String(segment || "")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim()
+    .slice(0, 120);
 }
 
 function ensurePdfFilename(filename) {

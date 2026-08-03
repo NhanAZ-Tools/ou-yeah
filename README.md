@@ -18,6 +18,8 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 - Hiển thị progress bar mượt, phần trăm tải trang, trạng thái tạo PDF và kết quả ngay trên mini-toolbar.
 - Nâng cấp trang thông báo ELOLMS với tìm kiếm, lọc chưa đọc/loại/môn học, nhóm theo thời gian và bố cục một cột responsive.
 - Làm lại TOC/Course Map trong trang khóa học ELOLMS: gọn hơn, phân cấp rõ hơn, có tìm nhanh, badge loại tài nguyên và highlight mục đang xem.
+- Tải nhanh học liệu theo toàn khóa học, chương, chủ đề hoặc phần. Công cụ chỉ xếp hàng các Video/Slide/Script mà ELOLMS đang cho phép truy cập, giữ cấu trúc/tên hiển thị trên web và ghi rõ các mục bị khóa hoặc lỗi.
+- Tạo `ou-yeah-course-manifest.json` bên cạnh học liệu đã tải để AI agent đọc đúng cây khóa học, URL nguồn, trạng thái hoàn thành, đường dẫn tệp cục bộ và lý do tài nguyên chưa có trên máy.
 - Xuất toàn bộ diễn đàn/kênh thông báo hoặc từng chủ đề riêng lẻ thành gói ZIP AI-ready, gồm Markdown, JSON có cấu trúc, ảnh và tài liệu đính kèm gốc.
 - Tạo bộ ôn tập từ quiz tự đánh giá bằng một nút: tự làm và nộp bài cho đến khi 3 lượt liên tiếp không xuất hiện câu mới, gom đáp án đúng rồi đóng gói Markdown, JSON cùng ảnh câu hỏi thành ZIP AI-ready. Tiến trình chạy trong trang nền cùng ELOLMS nên tab chính không reload/nhấp nháy, vẫn dùng được nút `Dừng`; có trần an toàn 50 lượt để tránh vòng lặp vô hạn.
 
@@ -37,6 +39,8 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 - Bấm nút tốc độ để chọn nhanh tốc độ phát.
 - Bấm nút tải xuống sau khi video đã phát vài giây.
 - Trên trang đọc sách, bấm `Tải PDF` trong mini-toolbar tối nổi phía trên thanh công cụ màu xanh. Giữ trang mở đến khi Chrome báo đã gửi PDF sang Downloads.
+- Trên trang khóa học, bấm `Tải toàn bộ học liệu` hoặc nút `Tải` ở đúng chương/chủ đề/phần cần lưu. Kiểm tra danh sách sẵn sàng/bị khóa, chọn Video/Slide/Script rồi bắt đầu. Hàng đợi chạy tuần tự và có `Tạm dừng`, `Tiếp tục`, `Hủy`; hãy giữ tab khóa học mở cho đến khi hoàn tất.
+- Học liệu được lưu dưới `Downloads/OU Yeah!/<Tên khóa học>/<cây đề mục trên ELOLMS>/`. Tiện ích không tự hoàn thành bài, không tạo link cho mục bị khóa và không dùng phần trăm tiến độ làm điều kiện thay cho quyền truy cập thực tế.
 - Trên trang danh sách diễn đàn, bấm `Xuất toàn bộ` để gom mọi chủ đề hoặc bấm `Xuất` ngay tại từng dòng. Trên trang thảo luận riêng, bấm `Xuất chủ đề`.
 - Gói diễn đàn chứa `forum.md` để đọc/nạp vào AI, `forum.json` để xử lý quan hệ phản hồi chính xác, `images/` chứa ảnh nội dung (không lấy avatar) và `attachments/` chứa PDF, Word, Excel, PowerPoint hoặc tệp đính kèm Moodle khác. Kiểm tra dữ liệu cá nhân trước khi chia sẻ gói này cho dịch vụ AI.
 - Trên trang quiz tự đánh giá, bấm `Bắt đầu quét bộ đề` trong bảng `OU Yeah! Quiz Lab`. Tiện ích xử lý các lượt trong một trang nền cùng domain, còn trang đang nhìn được giữ nguyên để theo dõi hoặc bấm `Tạm dừng`; sau đó có thể `Tiếp tục quét` mà không mất câu đã gom. Bạn có thể đổi sang tab khác nhưng nên giữ tab quiz mở; nếu reload, đóng tab hoặc rời trang khi đang quét/đóng gói, Chrome sẽ hỏi xác nhận. Khi tải xong `quiz-bank.zip`, bảng kết quả tự thu thành một hàng gọn với `Tải bộ đề` và `Quét bổ sung`; quét bổ sung giữ nguyên ngân hàng hiện tại rồi tìm thêm câu mới, không phải quét lại từ đầu.
@@ -62,6 +66,9 @@ Tiện ích không được thiết kế để vượt DRM, phá mã hóa, vư�
 - Extension cần quyền `<all_urls>` để bắt link video nếu ELOLMS/Vimeo phát video từ CDN khác.
 - Nếu stream có DRM hoặc mã hóa, extension không giải mã hoặc vượt bảo vệ.
 - Nếu chưa bắt được link tải, hãy bấm Play video vài giây rồi thử lại.
+- Tải hàng loạt học liệu vẫn phụ thuộc link mà ELOLMS cấp ở thời điểm quét. Khóa học đạt 100% thường mở đủ tài nguyên, nhưng tiện ích vẫn kiểm tra từng mục; khóa học chưa đạt 100% vẫn có thể tải riêng những Slide/Script/Video đã mở.
+- Không đóng hoặc reload tab khóa học khi hàng đợi đang chạy. Video được xử lý tuần tự để tránh nhiều luồng HLS cùng chiếm bộ nhớ; mục lỗi và mục bị khóa vẫn được ghi vào manifest để đối chiếu sau.
+- Dòng `arclight.vimeo.com ... ERR_BLOCKED_BY_CLIENT` trong DevTools chỉ là telemetry Vimeo bị chặn, không phải yêu cầu tắt trình chặn quảng cáo. OU Yeah! ưu tiên đọc luồng từ cấu hình player đã nhúng trong trang.
 - PDF được tạo từ ảnh trang mà viewer cung cấp, nên sách nhiều trang có thể cần thêm thời gian và bộ nhớ để hoàn tất.
 - Xuất toàn diễn đàn cần đọc tuần tự các trang/chủ đề bằng phiên đăng nhập hiện tại. Diễn đàn nhiều bài hoặc nhiều ảnh có thể tạo tệp ZIP lớn; các ảnh không tải được vẫn giữ URL gốc và được ghi trong mục cảnh báo.
 - Quiz Lab chỉ xuất hiện trên bài có dấu hiệu là quiz tự đánh giá/không tính điểm. Tính năng sẽ thực sự tạo và nộp các lượt làm bài, vì vậy chỉ dùng với bài không giới hạn lượt và không tính điểm như mô tả của giảng viên.

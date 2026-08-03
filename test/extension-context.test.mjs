@@ -94,6 +94,7 @@ test("background async responses turn rejected jobs into error responses", async
   const context = vm.createContext({
     chrome: {
       action: { onClicked: event() },
+      downloads: { onChanged: event() },
       runtime: { onMessage: event() },
       tabs: { onRemoved: event() },
       webRequest: {
@@ -122,6 +123,38 @@ test("background async responses turn rejected jobs into error responses", async
   } finally {
     process.off("unhandledRejection", recordUnhandled);
   }
+});
+
+test("background compacts long course paths without losing the file extension", async () => {
+  const source = await readFile(new URL("../src/background.js", import.meta.url), "utf8");
+  const event = () => ({ addListener() {} });
+  const context = vm.createContext({
+    chrome: {
+      action: { onClicked: event() },
+      downloads: { onChanged: event() },
+      runtime: { onMessage: event() },
+      tabs: { onRemoved: event() },
+      webRequest: {
+        onBeforeRequest: event(),
+        onHeadersReceived: event()
+      }
+    }
+  });
+
+  vm.runInContext(source, context, { filename: "src/background.js" });
+  const result = vm.runInContext(`sanitizeDownloadPath([
+    "OU Yeah!",
+    "Kỹ năng học tập - 2531",
+    "CHƯƠNG MỞ ĐẦU HƯỚNG DẪN SỬ DỤNG HỆ THỐNG QUẢN LÝ HỌC TẬP VÀ GIỚI THIỆU MÔN HỌC",
+    "Chủ đề 1 Hướng dẫn sử dụng hệ thống quản lý học tập",
+    "Hướng dẫn sử dụng các hệ thống hỗ trợ học tập dành cho sinh viên",
+    "Phần 1 Đăng nhập vào hệ thống bằng tài khoản được nhà trường cung cấp",
+    "Video Hướng dẫn đăng nhập email do Nhà trường cung cấp.mp4"
+  ].join("/"))`, context);
+
+  assert.ok(result.length <= 180, `path length was ${result.length}`);
+  assert.match(result, /\.mp4$/);
+  assert.ok(result.startsWith("OU Yeah!/"));
 });
 
 test("notification wheel fallback scrolls the document before Moodle handlers", async () => {
@@ -512,7 +545,7 @@ test("forum exporter supports whole-forum and single-topic AI-ready bundles", as
   const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
   const primaryScripts = manifest.content_scripts[0].js;
 
-  assert.deepEqual(primaryScripts.slice(-3), ["src/content.js", "src/forum-export.js", "src/quiz-trainer.js"]);
+  assert.deepEqual(primaryScripts.slice(-4), ["src/content.js", "src/course-download.js", "src/forum-export.js", "src/quiz-trainer.js"]);
   assert.match(source, /data-ou-forum-export="\$\{scope\}"/);
   assert.match(source, /button\.dataset\.ouForumExport = "row"/);
   assert.match(source, /exportWholeForum\(sourceUrl\)/);
@@ -529,6 +562,53 @@ test("forum exporter supports whole-forum and single-topic AI-ready bundles", as
   assert.match(source, /injectForumExportTheme\(\);\s+mountForumExportControls\(\);/);
   assert.match(source, /if \(mountTimer\) return;/);
   assert.match(source, /mountTimer = 0;/);
+});
+
+test("course downloader scopes unlocked Video, Slide and Script resources into an AI-readable course tree", async () => {
+  const source = await readFile(new URL("../src/course-download.js", import.meta.url), "utf8");
+  const background = await readFile(new URL("../src/background.js", import.meta.url), "utf8");
+  const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
+  const releaseScript = await readFile(new URL("../scripts/release.ps1", import.meta.url), "utf8");
+
+  assert.ok(manifest.content_scripts[0].js.includes("src/course-download.js"));
+  assert.match(releaseScript, /src\/course-download\.js/);
+  assert.match(source, /Tải toàn bộ học liệu/);
+  assert.match(source, /document\.getElementById\("collapsesections"\)/);
+  assert.match(source, /nativeActions\.insertBefore\(toolbar, collapseAll\)/);
+  assert.match(source, /ou-yeah-course-download-sr-only/);
+  assert.match(source, /ou-yeah-course-download-header-main/);
+  assert.match(source, /ou-yeah-course-download-header-main > \.d-flex/);
+  assert.match(source, /text-overflow:ellipsis/);
+  assert.match(source, /let panelMinimized = false/);
+  assert.match(source, /function minimizeSessionPanel\(\)/);
+  assert.match(source, /function renderMinimizedLauncher\(\)/);
+  assert.match(source, /data-ou-download-reopen/);
+  assert.match(source, /Thu nhỏ bảng tiến trình/);
+  assert.match(source, /title="Thu nhỏ">−<\/button>/);
+  assert.match(source, /function isExtensionContextAvailable\(\)/);
+  assert.match(source, /function isExtensionContextError\(error\)/);
+  assert.match(source, /function renderExtensionReloadNotice\(\)/);
+  assert.match(source, /data-ou-download-reload-page/);
+  assert.match(source, /if \(isExtensionContextError\(error\)\)/);
+  assert.match(source, /if \(extensionContextInvalidated\) return/);
+  assert.match(source, /openPreview\(section, title\)/);
+  assert.match(source, /\^\\\[xem\\\]\\s\+video/);
+  assert.match(source, /\^\\\[tai ve\\\]\\s\+slide/);
+  assert.match(source, /\^\\\[tai ve\\\]\\s\+script/);
+  assert.match(source, /availability === "locked"/);
+  assert.match(source, /ou-yeah-course-manifest\.json/);
+  assert.match(source, /instructionsForAgents/);
+  assert.match(source, /courseBatch: true/);
+  assert.match(source, /Sẽ tạm dừng sau tệp hiện tại/);
+  assert.match(source, /discoverStaticVideoCandidates/);
+  assert.match(source, /window\.playerConfig/);
+  assert.match(source, /vimeoCandidatesFromConfig/);
+  assert.match(source, /compactPathSegments\(segments, 180\)/);
+  assert.match(source, /failedResourcesMarkup/);
+  assert.match(background, /ou-yeah-download-course-resource/);
+  assert.match(background, /sanitizeDownloadPath/);
+  assert.match(background, /compactDownloadPath\(segments, 180\)/);
+  assert.match(background, /trackedDirectDownload/);
 });
 
 test("forum exporter writes Markdown, JSON and local images into a real ZIP layout", async () => {

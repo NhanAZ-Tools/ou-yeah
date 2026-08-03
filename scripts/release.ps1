@@ -49,6 +49,7 @@ try {
       "manifest.json",
       "src/time-format.js",
       "src/content.js",
+      "src/course-download.js",
       "src/forum-export.js",
       "src/quiz-trainer.js",
       "src/background.js",

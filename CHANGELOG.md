@@ -2,6 +2,10 @@
 
 ## Chưa phát hành
 
+- Thêm trình tải học liệu theo toàn khóa học/chương/chủ đề/phần: quét chính xác `[Xem] Video`, `[Tải về] Slide`, `[Tải về] Script`, chỉ tải link ELOLMS đang mở và hiển thị riêng các mục bị khóa cùng điều kiện tiên quyết.
+- Giữ cây thư mục và tên hiển thị trên ELOLMS trong `Downloads/OU Yeah!`, kèm hàng đợi tuần tự có tạm dừng/tiếp tục/hủy, theo dõi hoàn tất thật của Chrome và không reload tab chính.
+- Xuất `ou-yeah-course-manifest.json` làm chỉ mục AI-ready cho cây khóa học, URL nguồn, trạng thái hoàn thành/tải xuống, đường dẫn cục bộ, lỗi và điều kiện khóa; khóa học chưa đạt 100% vẫn tải được mọi tài nguyên hiện đang khả dụng.
+- Sửa tải hàng loạt video Vimeo khi trình chặn nội dung chặn API/telemetry của player: đọc trực tiếp `playerConfig` nhúng sẵn, rút gọn đường dẫn dài nhưng vẫn giữ đuôi tệp và liệt kê rõ từng mục lỗi để thử lại sau khi reload.
 - Chuẩn hóa toàn bộ giờ hiển thị trên `elolms.ou.edu.vn` từ AM/PM sang định dạng 24 giờ; áp dụng cả nội dung Moodle tải động nhưng không can thiệp ô soạn thảo hay đoạn mã.
 - Biến section đầu khóa học ELOLMS thành nhóm `Chung` có thể thu gọn/mở rộng; đồng bộ hai tài nguyên mặc định như `Thông báo` và `Thảo luận chung` với nút điều khiển tất cả.
 - Thêm Quiz Lab một nút cho bài tự đánh giá: tự chạy đến khi 3 lượt liên tiếp không xuất hiện câu mới (tối đa 50 lượt), chọn phương án đầu tiên, nộp tuần tự, đọc đáp án đúng từ trang xem lại và xuất ZIP AI-ready gồm Markdown, JSON cùng ảnh câu hỏi.

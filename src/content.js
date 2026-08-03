@@ -3271,13 +3271,23 @@
     const id = /\/video\/(\d+)/.exec(location.pathname)?.[1];
     if (!id) return;
 
-    const response = await fetch(`https://player.vimeo.com/video/${id}/config`, {
-      credentials: "include",
-      cache: "no-store"
-    });
+    const embeddedConfig = readEmbeddedVimeoConfig(document);
+    if (embeddedConfig) {
+      addVimeoConfigCandidates(candidates, embeddedConfig);
+      if (candidates.some((candidate) => candidate.source.startsWith("vimeo"))) return;
+    }
+
+    const hash = new URL(location.href).searchParams.get("h");
+    const configUrl = new URL(`https://player.vimeo.com/video/${id}/config`);
+    if (hash) configUrl.searchParams.set("h", hash);
+    const response = await fetch(configUrl, { credentials: "include", cache: "no-store" });
     if (!response.ok) return;
 
     const config = await response.json();
+    addVimeoConfigCandidates(candidates, config);
+  }
+
+  function addVimeoConfigCandidates(candidates, config) {
     const progressive = config?.request?.files?.progressive || [];
     progressive.forEach((file) => {
       const quality = Number.parseInt(file.quality, 10) || 0;
@@ -3292,6 +3302,43 @@
     Object.values(hls?.cdns || {}).forEach((cdn) => {
       addCandidate(candidates, cdn?.url, "vimeo hls", 140, true);
     });
+  }
+
+  function readEmbeddedVimeoConfig(page) {
+    for (const script of page.scripts) {
+      const payload = jsonAssignmentPayload(script.textContent || "", "window.playerConfig");
+      if (!payload) continue;
+      try {
+        return JSON.parse(payload);
+      } catch {
+        // Continue in case another inline script contains a valid assignment.
+      }
+    }
+    return null;
+  }
+
+  function jsonAssignmentPayload(source, variableName) {
+    const markerIndex = source.indexOf(variableName);
+    if (markerIndex < 0) return "";
+    const start = source.indexOf("{", markerIndex + variableName.length);
+    if (start < 0) return "";
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < source.length; index += 1) {
+      const character = source[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') inString = true;
+      else if (character === "{") depth += 1;
+      else if (character === "}" && --depth === 0) return source.slice(start, index + 1);
+    }
+    return "";
   }
 
   function addCandidate(candidates, rawUrl, source, weight, allowUnknown, quality = "") {
