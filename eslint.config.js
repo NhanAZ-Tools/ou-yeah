@@ -25,12 +25,26 @@ export default [
     },
     rules: {
       ...js.configs.recommended.rules,
+      semi: ["error", "never"],
       "@typescript-eslint/no-floating-promises": [
         "error",
         {
           "ignoreVoid": false
         }
       ]
+    }
+  },
+  {
+    files: ["test/**/*.mjs"],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        ecmaVersion: "latest",
+        sourceType: "module"
+      }
+    },
+    rules: {
+      semi: ["error", "never"]
     }
   }
 ];

@@ -52,6 +52,7 @@ try {
       "src/course-download.js",
       "src/forum-export.js",
       "src/quiz-trainer.js",
+      "src/course-data-export.js",
       "src/background.js",
       "src/offscreen.js",
       "src/notifications.js",

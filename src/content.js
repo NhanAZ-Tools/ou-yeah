@@ -1,22 +1,22 @@
 (() => {
-  "use strict";
+  "use strict"
 
-  const APP = "ou-yeah";
-  const HUD_ID = "ou-yeah-video-hud";
-  const BOOK_DOWNLOAD_ID = "ou-yeah-book-pdf-download";
-  const STORAGE_KEY = "ouYeahSettings";
-  const LEGACY_STORAGE_KEY = "elolmsVideoToolsSettings";
-  const LEGACY_HUD_ID = "elolms-video-tools-hud";
-  const LEGACY_BOOK_DOWNLOAD_ID = "elolms-book-pdf-download";
-  const BRAND = "#5269C7";
-  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
-  const SKIP_SECONDS = 5;
-  const DEFAULT_SETTINGS = { speed: 1 };
-  const MEDIA_URL_RE = /\.(mp4|m4v|webm|mov|mkv|m3u8|mpd)(?:[?#]|$)/i;
-  const HLS_URL_RE = /\.m3u8(?:[?#]|$)/i;
-  const DASH_URL_RE = /\.mpd(?:[?#]|$)/i;
-  const HUD_VIEWPORT_MARGIN = 12;
-  const HUD_VIDEO_GAP = 12;
+  const APP = "ou-yeah"
+  const HUD_ID = "ou-yeah-video-hud"
+  const BOOK_DOWNLOAD_ID = "ou-yeah-book-pdf-download"
+  const STORAGE_KEY = "ouYeahSettings"
+  const LEGACY_STORAGE_KEY = "elolmsVideoToolsSettings"
+  const LEGACY_HUD_ID = "elolms-video-tools-hud"
+  const LEGACY_BOOK_DOWNLOAD_ID = "elolms-book-pdf-download"
+  const BRAND = "#5269C7"
+  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4]
+  const SKIP_SECONDS = 5
+  const DEFAULT_SETTINGS = { speed: 1 }
+  const MEDIA_URL_RE = /\.(mp4|m4v|webm|mov|mkv|m3u8|mpd)(?:[?#]|$)/i
+  const HLS_URL_RE = /\.m3u8(?:[?#]|$)/i
+  const DASH_URL_RE = /\.mpd(?:[?#]|$)/i
+  const HUD_VIEWPORT_MARGIN = 12
+  const HUD_VIDEO_GAP = 12
   const PLAYER_CONTROL_SELECTORS = [
     ".vjs-control-bar",
     ".vp-controls",
@@ -29,112 +29,112 @@
     "[data-testid='player-controls']",
     "[class*='ControlBar']",
     "[class*='control-bar']"
-  ];
-  const IS_ELOLMS = location.hostname === "elolms.ou.edu.vn";
-  const IS_VIMEO = location.hostname === "player.vimeo.com";
+  ]
+  const IS_ELOLMS = location.hostname === "elolms.ou.edu.vn"
+  const IS_VIMEO = location.hostname === "player.vimeo.com"
   const IS_THUQUAN_BOOK = location.hostname === "thuquan.ou.edu.vn"
-    && location.pathname.toLowerCase().startsWith("/doc-truc-tuyen/sach/");
+    && location.pathname.toLowerCase().startsWith("/doc-truc-tuyen/sach/")
   const IS_ELOLMS_NOTIFICATIONS = IS_ELOLMS
-    && location.pathname.toLowerCase() === "/message/output/popup/notifications.php";
+    && location.pathname.toLowerCase() === "/message/output/popup/notifications.php"
   const IS_ELOLMS_COURSE_VIEW = IS_ELOLMS
-    && location.pathname.toLowerCase() === "/course/view.php";
+    && location.pathname.toLowerCase() === "/course/view.php"
   const IS_ELOLMS_COURSE_ACTIVITY = IS_ELOLMS
-    && /^\/mod\/[^/]+\/view\.php$/i.test(location.pathname);
-  const IS_ELOLMS_COURSE_CONTEXT = IS_ELOLMS_COURSE_VIEW || IS_ELOLMS_COURSE_ACTIVITY;
-  const NOTIFICATION_POPOVER_STYLE_ID = "ou-yeah-notification-popover-theme";
-  const ELOLMS_FONT_STYLE_ID = "ou-yeah-elolms-font-theme";
-  const COURSE_MAP_STYLE_ID = "ou-yeah-course-map-theme";
-  const COURSE_MAP_TOOLS_ID = "ou-yeah-course-map-tools";
-  const COURSE_MAP_RESIZE_HANDLE_CLASS = "ou-course-map-resize-handle";
-  const COURSE_GENERAL_TOGGLE_ID = "ou-yeah-general-section-toggle";
-  const COURSE_MAP_WIDTH_STORAGE_KEY = "ouYeahCourseMapWidth";
-  const COURSE_MAP_DEFAULT_WIDTH = 390;
-  const COURSE_MAP_MIN_WIDTH = 320;
-  const COURSE_MAP_MAX_WIDTH = 620;
-  const NOTIFICATION_UNREAD_ICON_FILE = "envelope-dot.svg";
+    && /^\/mod\/[^/]+\/view\.php$/i.test(location.pathname)
+  const IS_ELOLMS_COURSE_CONTEXT = IS_ELOLMS_COURSE_VIEW || IS_ELOLMS_COURSE_ACTIVITY
+  const NOTIFICATION_POPOVER_STYLE_ID = "ou-yeah-notification-popover-theme"
+  const ELOLMS_FONT_STYLE_ID = "ou-yeah-elolms-font-theme"
+  const COURSE_MAP_STYLE_ID = "ou-yeah-course-map-theme"
+  const COURSE_MAP_TOOLS_ID = "ou-yeah-course-map-tools"
+  const COURSE_MAP_RESIZE_HANDLE_CLASS = "ou-course-map-resize-handle"
+  const COURSE_GENERAL_TOGGLE_ID = "ou-yeah-general-section-toggle"
+  const COURSE_MAP_WIDTH_STORAGE_KEY = "ouYeahCourseMapWidth"
+  const COURSE_MAP_DEFAULT_WIDTH = 390
+  const COURSE_MAP_MIN_WIDTH = 320
+  const COURSE_MAP_MAX_WIDTH = 620
+  const NOTIFICATION_UNREAD_ICON_FILE = "envelope-dot.svg"
   const NOTIFICATION_TYPE_ICON_FILES = {
     assignment: "book-alt.svg",
     meeting: "daily-calendar.svg",
     discussion: "bubble-discussion.svg",
     announcement: "bell-notification-social-media.svg",
     system: "bell-notification-social-media.svg"
-  };
+  }
 
-  if (!IS_ELOLMS && !IS_VIMEO && !IS_THUQUAN_BOOK) return;
-  let notificationPopoverTimer = 0;
-  let notificationPopoverObserver = null;
-  let courseMapTimer = 0;
-  let courseMapScrollTimer = 0;
-  let courseMapBootstrapTimer = 0;
-  let courseMapBootstrapAttempts = 0;
-  let courseMapDefaultCollapseApplied = false;
-  let courseMapDefaultCollapseInProgress = false;
-  let courseMapUserToggledSections = false;
-  let courseMapResizeWidth = COURSE_MAP_DEFAULT_WIDTH;
-  let courseMapCurrentModuleScrolled = false;
-  let courseMapObserver = null;
-  if (IS_ELOLMS) initElolmsFontTheme();
-  if (IS_ELOLMS && window.top === window.self) initNotificationPopoverPolish();
-  if (IS_ELOLMS_COURSE_CONTEXT && window.top === window.self) initCourseMapPolish();
-  if (IS_ELOLMS_NOTIFICATIONS) return;
-  const extensionWindow = /** @type {Window & { __ouYeahLoaded?: boolean }} */ (window);
-  if (extensionWindow.__ouYeahLoaded) return;
-  extensionWindow.__ouYeahLoaded = true;
-  document.getElementById(LEGACY_HUD_ID)?.remove();
-  document.getElementById(LEGACY_BOOK_DOWNLOAD_ID)?.remove();
+  if (!IS_ELOLMS && !IS_VIMEO && !IS_THUQUAN_BOOK) return
+  let notificationPopoverTimer = 0
+  let notificationPopoverObserver = null
+  let courseMapTimer = 0
+  let courseMapScrollTimer = 0
+  let courseMapBootstrapTimer = 0
+  let courseMapBootstrapAttempts = 0
+  let courseMapDefaultCollapseApplied = false
+  let courseMapDefaultCollapseInProgress = false
+  let courseMapUserToggledSections = false
+  let courseMapResizeWidth = COURSE_MAP_DEFAULT_WIDTH
+  let courseMapCurrentModuleScrolled = false
+  let courseMapObserver = null
+  if (IS_ELOLMS) initElolmsFontTheme()
+  if (IS_ELOLMS && window.top === window.self) initNotificationPopoverPolish()
+  if (IS_ELOLMS_COURSE_CONTEXT && window.top === window.self) initCourseMapPolish()
+  if (IS_ELOLMS_NOTIFICATIONS) return
+  const extensionWindow = /** @type {Window & { __ouYeahLoaded?: boolean }} */ (window)
+  if (extensionWindow.__ouYeahLoaded) return
+  extensionWindow.__ouYeahLoaded = true
+  document.getElementById(LEGACY_HUD_ID)?.remove()
+  document.getElementById(LEGACY_BOOK_DOWNLOAD_ID)?.remove()
 
-  let settings = { ...DEFAULT_SETTINGS };
-  let videos = [];
-  let activeVideo = null;
-  let hud = null;
-  let scanTimer = 0;
-  let saveTimer = 0;
-  let hudVisibleTimer = 0;
-  let hudPositionFrame = 0;
-  let toastTimer = 0;
-  let videoProgressResetTimer = 0;
-  let lastPointerInVideoAt = 0;
-  let applyingRate = false;
-  let activeDownloadJobId = "";
-  let videoDownloadUiPinned = false;
-  let downloadToastAnchor = null;
-  let nativeControlsHidden = false;
-  let activeBookDownloadJobId = "";
-  let bookDownloadRoot = null;
-  let bookDownloadButton = null;
-  let bookDownloadStatus = null;
-  let bookTotalPages = 0;
-  let bookStatusTimer = 0;
-  const registeredVideos = new WeakSet();
+  let settings = { ...DEFAULT_SETTINGS }
+  let videos = []
+  let activeVideo = null
+  let hud = null
+  let scanTimer = 0
+  let saveTimer = 0
+  let hudVisibleTimer = 0
+  let hudPositionFrame = 0
+  let toastTimer = 0
+  let videoProgressResetTimer = 0
+  let lastPointerInVideoAt = 0
+  let applyingRate = false
+  let activeDownloadJobId = ""
+  let videoDownloadUiPinned = false
+  let downloadToastAnchor = null
+  let nativeControlsHidden = false
+  let activeBookDownloadJobId = ""
+  let bookDownloadRoot = null
+  let bookDownloadButton = null
+  let bookDownloadStatus = null
+  let bookTotalPages = 0
+  let bookStatusTimer = 0
+  const registeredVideos = new WeakSet()
 
   if (IS_THUQUAN_BOOK) {
     try {
-      initBookDownloader();
+      initBookDownloader()
     } catch (error) {
-      handleExtensionError(error);
+      handleExtensionError(error)
     }
-    return;
+    return
   }
 
-  init().catch(handleExtensionError);
+  init().catch(handleExtensionError)
 
   function initElolmsFontTheme() {
-    const applyBodyClass = () => document.body?.classList.add("ou-yeah-elolms-font");
-    injectElolmsFontTheme();
-    applyBodyClass();
+    const applyBodyClass = () => document.body?.classList.add("ou-yeah-elolms-font")
+    injectElolmsFontTheme()
+    applyBodyClass()
 
     if (!document.body) {
-      document.addEventListener("DOMContentLoaded", applyBodyClass, { once: true });
+      document.addEventListener("DOMContentLoaded", applyBodyClass, { once: true })
     }
   }
 
   function injectElolmsFontTheme() {
-    if (document.getElementById(ELOLMS_FONT_STYLE_ID)) return;
+    if (document.getElementById(ELOLMS_FONT_STYLE_ID)) return
 
-    const style = document.createElement("style");
-    style.id = ELOLMS_FONT_STYLE_ID;
-    style.textContent = elolmsFontCss();
-    document.documentElement.appendChild(style);
+    const style = document.createElement("style")
+    style.id = ELOLMS_FONT_STYLE_ID
+    style.textContent = elolmsFontCss()
+    document.documentElement.appendChild(style)
   }
 
   function elolmsFontCss() {
@@ -160,316 +160,316 @@
       body.ou-yeah-elolms-font :where(button, input, textarea, select, option, optgroup) {
         font-family: var(--ou-global-font) !important;
       }
-    `;
+    `
   }
 
   function initNotificationPopoverPolish() {
-    injectNotificationPopoverTheme();
-    refreshNotificationPopover();
+    injectNotificationPopoverTheme()
+    refreshNotificationPopover()
 
-    if (notificationPopoverObserver) return;
-    notificationPopoverObserver = new MutationObserver(scheduleNotificationPopoverRefresh);
-    notificationPopoverObserver.observe(document.documentElement, { childList: true, subtree: true });
+    if (notificationPopoverObserver) return
+    notificationPopoverObserver = new MutationObserver(scheduleNotificationPopoverRefresh)
+    notificationPopoverObserver.observe(document.documentElement, { childList: true, subtree: true })
   }
 
   function initCourseMapPolish() {
-    injectCourseMapTheme();
-    loadCourseMapWidthPreference();
-    startCourseMapBootstrap();
+    injectCourseMapTheme()
+    loadCourseMapWidthPreference()
+    startCourseMapBootstrap()
 
     if (!courseMapObserver) {
-      courseMapObserver = new MutationObserver(scheduleCourseMapRefresh);
+      courseMapObserver = new MutationObserver(scheduleCourseMapRefresh)
       courseMapObserver.observe(document.documentElement, {
         attributeFilter: ["aria-expanded", "class", "hidden", "style"],
         attributes: true,
         childList: true,
         subtree: true
-      });
+      })
     }
 
-    window.addEventListener("scroll", scheduleCourseMapScroll, { passive: true });
-    window.addEventListener("resize", scheduleCourseMapScroll, { passive: true });
-    window.addEventListener("pageshow", startCourseMapBootstrap, { passive: true });
-    document.addEventListener("readystatechange", startCourseMapBootstrap);
+    window.addEventListener("scroll", scheduleCourseMapScroll, { passive: true })
+    window.addEventListener("resize", scheduleCourseMapScroll, { passive: true })
+    window.addEventListener("pageshow", startCourseMapBootstrap, { passive: true })
+    document.addEventListener("readystatechange", startCourseMapBootstrap)
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) startCourseMapBootstrap();
-    });
-    window.addEventListener("hashchange", scheduleCourseMapScroll, { passive: true });
-    document.addEventListener("click", handleCourseSectionToggleEvent, true);
-    document.addEventListener("click", handleCourseMapActivityAnchorClick, true);
-    document.addEventListener("click", handleCourseMapTopLevelSectionClick, true);
-    document.addEventListener("pointerdown", handleCourseMapResizeEdgePointerDown, true);
+      if (!document.hidden) startCourseMapBootstrap()
+    })
+    window.addEventListener("hashchange", scheduleCourseMapScroll, { passive: true })
+    document.addEventListener("click", handleCourseSectionToggleEvent, true)
+    document.addEventListener("click", handleCourseMapActivityAnchorClick, true)
+    document.addEventListener("click", handleCourseMapTopLevelSectionClick, true)
+    document.addEventListener("pointerdown", handleCourseMapResizeEdgePointerDown, true)
     if (!window.PointerEvent) {
-      document.addEventListener("mousedown", handleCourseMapResizeEdgePointerDown, true);
+      document.addEventListener("mousedown", handleCourseMapResizeEdgePointerDown, true)
     }
-    document.addEventListener("transitionend", handleCourseSectionToggleEvent, true);
+    document.addEventListener("transitionend", handleCourseSectionToggleEvent, true)
   }
 
   function startCourseMapBootstrap() {
-    courseMapBootstrapAttempts = 0;
-    runCourseMapBootstrap();
+    courseMapBootstrapAttempts = 0
+    runCourseMapBootstrap()
   }
 
   function runCourseMapBootstrap() {
-    window.clearTimeout(courseMapBootstrapTimer);
-    refreshCourseMap();
+    window.clearTimeout(courseMapBootstrapTimer)
+    refreshCourseMap()
 
-    courseMapBootstrapAttempts += 1;
-    if (courseMapBootstrapAttempts >= 18) return;
+    courseMapBootstrapAttempts += 1
+    if (courseMapBootstrapAttempts >= 18) return
 
-    const delay = courseMapBootstrapAttempts < 8 ? 180 : 650;
-    courseMapBootstrapTimer = window.setTimeout(runCourseMapBootstrap, delay);
+    const delay = courseMapBootstrapAttempts < 8 ? 180 : 650
+    courseMapBootstrapTimer = window.setTimeout(runCourseMapBootstrap, delay)
   }
 
   function scheduleCourseMapRefresh() {
-    window.clearTimeout(courseMapTimer);
-    courseMapTimer = window.setTimeout(refreshCourseMap, 120);
+    window.clearTimeout(courseMapTimer)
+    courseMapTimer = window.setTimeout(refreshCourseMap, 120)
   }
 
   function scheduleCourseMapScroll() {
-    window.clearTimeout(courseMapScrollTimer);
-    courseMapScrollTimer = window.setTimeout(updateCourseMapCurrentSection, 80);
+    window.clearTimeout(courseMapScrollTimer)
+    courseMapScrollTimer = window.setTimeout(updateCourseMapCurrentSection, 80)
   }
 
   function handleCourseSectionToggleEvent(event) {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
+    const target = event.target
+    if (!(target instanceof Element)) return
 
-    const sectionToggle = target.closest(".course-content .course-section [data-toggle='collapse'], .course-content .course-section [data-bs-toggle='collapse']");
-    const globalToggle = target.closest("#collapsesections, .section-collapsemenu, [data-toggle='toggleall'], [data-bs-toggle='toggleall']");
-    if (!sectionToggle && !globalToggle) return;
+    const sectionToggle = target.closest(".course-content .course-section [data-toggle='collapse'], .course-content .course-section [data-bs-toggle='collapse']")
+    const globalToggle = target.closest("#collapsesections, .section-collapsemenu, [data-toggle='toggleall'], [data-bs-toggle='toggleall']")
+    if (!sectionToggle && !globalToggle) return
 
-    if (globalToggle instanceof HTMLElement) scheduleGeneralCourseSectionGlobalSync(globalToggle);
+    if (globalToggle instanceof HTMLElement) scheduleGeneralCourseSectionGlobalSync(globalToggle)
 
     if (!courseMapDefaultCollapseInProgress && event.isTrusted) {
-      courseMapUserToggledSections = true;
+      courseMapUserToggledSections = true
     }
 
-    scheduleCourseMapRefresh();
-    window.setTimeout(refreshCourseMap, 80);
-    window.setTimeout(refreshCourseMap, 260);
-    window.setTimeout(refreshCourseMap, 620);
-    window.setTimeout(refreshCourseMap, 1100);
+    scheduleCourseMapRefresh()
+    window.setTimeout(refreshCourseMap, 80)
+    window.setTimeout(refreshCourseMap, 260)
+    window.setTimeout(refreshCourseMap, 620)
+    window.setTimeout(refreshCourseMap, 1100)
   }
 
   function handleCourseMapActivityAnchorClick(event) {
-    if (!IS_ELOLMS_COURSE_ACTIVITY) return;
+    if (!IS_ELOLMS_COURSE_ACTIVITY) return
 
-    const target = event.target;
-    if (!(target instanceof Element)) return;
+    const target = event.target
+    if (!(target instanceof Element)) return
 
-    const link = target.closest("#courseindex [data-for='cm'] .courseindex-link");
-    if (!(link instanceof HTMLAnchorElement)) return;
+    const link = target.closest("#courseindex [data-for='cm'] .courseindex-link")
+    if (!(link instanceof HTMLAnchorElement)) return
 
-    const anchorHash = getCourseMapActivityAnchorHash(link);
-    if (!anchorHash) return;
+    const anchorHash = getCourseMapActivityAnchorHash(link)
+    if (!anchorHash) return
 
-    event.preventDefault();
-    event.stopImmediatePropagation();
+    event.preventDefault()
+    event.stopImmediatePropagation()
 
-    const normalizedUrl = new URL(location.href);
-    normalizedUrl.hash = anchorHash;
-    history.pushState(null, "", normalizedUrl.href);
+    const normalizedUrl = new URL(location.href)
+    normalizedUrl.hash = anchorHash
+    history.pushState(null, "", normalizedUrl.href)
 
-    const anchorTarget = document.getElementById(anchorHash.slice(1));
+    const anchorTarget = document.getElementById(anchorHash.slice(1))
     if (anchorTarget instanceof HTMLElement) {
-      anchorTarget.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+      anchorTarget.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" })
     }
 
-    scheduleCourseMapRefresh();
+    scheduleCourseMapRefresh()
   }
 
   function handleCourseMapTopLevelSectionClick(event) {
-    if (!IS_ELOLMS_COURSE_VIEW) return;
+    if (!IS_ELOLMS_COURSE_VIEW) return
 
-    const target = event.target;
-    if (!(target instanceof Element)) return;
+    const target = event.target
+    if (!(target instanceof Element)) return
 
-    const link = target.closest("#courseindex [data-ou-course-map-title] .courseindex-link");
-    if (!(link instanceof HTMLAnchorElement)) return;
+    const link = target.closest("#courseindex [data-ou-course-map-title] .courseindex-link")
+    if (!(link instanceof HTMLAnchorElement)) return
 
-    const section = link.closest('[data-for="section"]');
-    if (!(section instanceof HTMLElement)) return;
-    if (section.dataset.ouCourseMapDepth !== "0") return;
+    const section = link.closest('[data-for="section"]')
+    if (!(section instanceof HTMLElement)) return
+    if (section.dataset.ouCourseMapDepth !== "0") return
 
-    const sectionHash = getCourseMapSectionAnchorHash(link);
-    if (!sectionHash) return;
+    const sectionHash = getCourseMapSectionAnchorHash(link)
+    if (!sectionHash) return
 
-    event.preventDefault();
-    event.stopImmediatePropagation();
+    event.preventDefault()
+    event.stopImmediatePropagation()
 
-    const normalizedUrl = new URL(location.href);
-    normalizedUrl.hash = sectionHash;
-    history.pushState(null, "", normalizedUrl.href);
+    const normalizedUrl = new URL(location.href)
+    normalizedUrl.hash = sectionHash
+    history.pushState(null, "", normalizedUrl.href)
 
-    const sectionTarget = document.getElementById(sectionHash.slice(1));
+    const sectionTarget = document.getElementById(sectionHash.slice(1))
     if (sectionTarget instanceof HTMLElement) {
-      sectionTarget.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+      sectionTarget.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" })
     }
 
-    markCourseMapCurrentSection(section);
-    scheduleCourseMapScroll();
+    markCourseMapCurrentSection(section)
+    scheduleCourseMapScroll()
   }
 
   function isCourseMapDrawerOpen(drawer) {
-    if (drawer.classList.contains("show")) return true;
-    if (drawer.getAttribute("aria-hidden") === "false") return true;
-    if (document.body?.classList.contains("drawer-open-index")) return true;
-    if (document.body?.classList.contains("drawer-open-left")) return true;
-    return false;
+    if (drawer.classList.contains("show")) return true
+    if (drawer.getAttribute("aria-hidden") === "false") return true
+    if (document.body?.classList.contains("drawer-open-index")) return true
+    if (document.body?.classList.contains("drawer-open-left")) return true
+    return false
   }
 
   function refreshCourseMap() {
-    if (!document.body) return;
+    if (!document.body) return
 
-    document.body.classList.add("ou-yeah-course-view");
+    document.body.classList.add("ou-yeah-course-view")
 
-    const drawer = document.getElementById("theme_boost-drawers-courseindex");
-    const courseIndex = document.getElementById("courseindex");
-    if (!drawer || !courseIndex) return;
+    const drawer = document.getElementById("theme_boost-drawers-courseindex")
+    const courseIndex = document.getElementById("courseindex")
+    if (!drawer || !courseIndex) return
 
-    drawer.classList.add("ou-yeah-course-map-drawer");
-    applyCourseMapWidth(courseMapResizeWidth);
-    ensureCourseMapResizeHandle(drawer);
-    normalizeCourseActivityAnchorLinks(courseIndex);
-    courseIndex.classList.add("ou-yeah-course-map");
-    annotateCourseMap(courseIndex);
-    highlightCurrentCourseIndexModule(courseIndex);
+    drawer.classList.add("ou-yeah-course-map-drawer")
+    applyCourseMapWidth(courseMapResizeWidth)
+    ensureCourseMapResizeHandle(drawer)
+    normalizeCourseActivityAnchorLinks(courseIndex)
+    courseIndex.classList.add("ou-yeah-course-map")
+    annotateCourseMap(courseIndex)
+    highlightCurrentCourseIndexModule(courseIndex)
 
-    if (!IS_ELOLMS_COURSE_VIEW) return;
+    if (!IS_ELOLMS_COURSE_VIEW) return
 
-    ensureGeneralCourseSection();
-    applyDefaultCollapsedCourseSections();
-    annotateOpenCourseSections();
-    ensureCourseMapTools(drawer, courseIndex);
-    updateCourseMapStats(drawer, courseIndex);
-    updateCourseMapCurrentSection();
+    ensureGeneralCourseSection()
+    applyDefaultCollapsedCourseSections()
+    annotateOpenCourseSections()
+    ensureCourseMapTools(drawer, courseIndex)
+    updateCourseMapStats(drawer, courseIndex)
+    updateCourseMapCurrentSection()
   }
 
   function ensureCourseMapResizeHandle(drawer) {
-    if (drawer.querySelector(`.${COURSE_MAP_RESIZE_HANDLE_CLASS}`)) return;
+    if (drawer.querySelector(`.${COURSE_MAP_RESIZE_HANDLE_CLASS}`)) return
 
-    const handle = document.createElement("button");
-    handle.type = "button";
-    handle.className = COURSE_MAP_RESIZE_HANDLE_CLASS;
-    handle.setAttribute("aria-label", "Kéo để đổi độ rộng Course Map");
-    handle.title = "Kéo để đổi độ rộng Course Map. Nhấp đúp để đặt lại.";
-    handle.addEventListener("pointerdown", (event) => startCourseMapResize(event, drawer));
+    const handle = document.createElement("button")
+    handle.type = "button"
+    handle.className = COURSE_MAP_RESIZE_HANDLE_CLASS
+    handle.setAttribute("aria-label", "Kéo để đổi độ rộng Course Map")
+    handle.title = "Kéo để đổi độ rộng Course Map. Nhấp đúp để đặt lại."
+    handle.addEventListener("pointerdown", (event) => startCourseMapResize(event, drawer))
     handle.addEventListener("mousedown", (event) => {
-      if (!window.PointerEvent) startCourseMapResize(event, drawer);
-    });
+      if (!window.PointerEvent) startCourseMapResize(event, drawer)
+    })
     handle.addEventListener("dblclick", () => {
-      applyCourseMapWidth(COURSE_MAP_DEFAULT_WIDTH);
-      persistCourseMapWidthPreference(COURSE_MAP_DEFAULT_WIDTH);
-    });
-    drawer.appendChild(handle);
+      applyCourseMapWidth(COURSE_MAP_DEFAULT_WIDTH)
+      persistCourseMapWidthPreference(COURSE_MAP_DEFAULT_WIDTH)
+    })
+    drawer.appendChild(handle)
   }
 
   function handleCourseMapResizeEdgePointerDown(event) {
-    if ("button" in event && event.button !== 0) return;
+    if ("button" in event && event.button !== 0) return
 
-    const drawer = document.getElementById("theme_boost-drawers-courseindex");
-    if (!(drawer instanceof HTMLElement) || !isCourseMapDrawerOpen(drawer)) return;
+    const drawer = document.getElementById("theme_boost-drawers-courseindex")
+    if (!(drawer instanceof HTMLElement) || !isCourseMapDrawerOpen(drawer)) return
 
-    const rect = drawer.getBoundingClientRect();
-    const edgeSize = 14;
-    const isNearRightEdge = event.clientX >= rect.right - edgeSize && event.clientX <= rect.right + edgeSize;
-    const isInsideVerticalBounds = event.clientY >= rect.top && event.clientY <= rect.bottom;
-    if (!isNearRightEdge || !isInsideVerticalBounds) return;
+    const rect = drawer.getBoundingClientRect()
+    const edgeSize = 14
+    const isNearRightEdge = event.clientX >= rect.right - edgeSize && event.clientX <= rect.right + edgeSize
+    const isInsideVerticalBounds = event.clientY >= rect.top && event.clientY <= rect.bottom
+    if (!isNearRightEdge || !isInsideVerticalBounds) return
 
-    startCourseMapResize(event, drawer);
+    startCourseMapResize(event, drawer)
   }
 
   function startCourseMapResize(event, drawer) {
-    if ("button" in event && event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
+    if ("button" in event && event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
 
-    const startX = event.clientX;
-    const startWidth = courseMapResizeWidth || Math.round(drawer.getBoundingClientRect().width) || COURSE_MAP_DEFAULT_WIDTH;
-    document.body?.classList.add("ou-yeah-course-map-resizing");
+    const startX = event.clientX
+    const startWidth = courseMapResizeWidth || Math.round(drawer.getBoundingClientRect().width) || COURSE_MAP_DEFAULT_WIDTH
+    document.body?.classList.add("ou-yeah-course-map-resizing")
 
-    const handle = event.currentTarget;
+    const handle = event.currentTarget
     if (handle instanceof HTMLElement && "pointerId" in event) {
       try {
-        handle.setPointerCapture?.(event.pointerId);
+        handle.setPointerCapture?.(event.pointerId)
       } catch {
         // Pointer capture is progressive enhancement; document listeners still handle drag.
       }
     }
 
     const move = (moveEvent) => {
-      moveEvent.preventDefault();
-      applyCourseMapWidth(startWidth + moveEvent.clientX - startX);
-    };
+      moveEvent.preventDefault()
+      applyCourseMapWidth(startWidth + moveEvent.clientX - startX)
+    }
 
-    const moveEventName = "pointerId" in event ? "pointermove" : "mousemove";
-    const upEventName = "pointerId" in event ? "pointerup" : "mouseup";
-    const cancelEventName = "pointerId" in event ? "pointercancel" : "mouseleave";
+    const moveEventName = "pointerId" in event ? "pointermove" : "mousemove"
+    const upEventName = "pointerId" in event ? "pointerup" : "mouseup"
+    const cancelEventName = "pointerId" in event ? "pointercancel" : "mouseleave"
     const stop = () => {
-      document.body?.classList.remove("ou-yeah-course-map-resizing");
-      persistCourseMapWidthPreference(courseMapResizeWidth);
-      document.removeEventListener(moveEventName, move, true);
-      document.removeEventListener(upEventName, stop, true);
-      document.removeEventListener(cancelEventName, stop, true);
-    };
+      document.body?.classList.remove("ou-yeah-course-map-resizing")
+      persistCourseMapWidthPreference(courseMapResizeWidth)
+      document.removeEventListener(moveEventName, move, true)
+      document.removeEventListener(upEventName, stop, true)
+      document.removeEventListener(cancelEventName, stop, true)
+    }
 
-    document.addEventListener(moveEventName, move, true);
-    document.addEventListener(upEventName, stop, true);
-    document.addEventListener(cancelEventName, stop, true);
+    document.addEventListener(moveEventName, move, true)
+    document.addEventListener(upEventName, stop, true)
+    document.addEventListener(cancelEventName, stop, true)
   }
 
   function applyCourseMapWidth(width) {
-    const normalizedWidth = clampCourseMapWidth(width);
-    courseMapResizeWidth = normalizedWidth;
-    document.body?.style.setProperty("--ou-course-map-width", `${normalizedWidth}px`);
-    document.body?.style.setProperty("--drawer-left-width", `${normalizedWidth}px`);
+    const normalizedWidth = clampCourseMapWidth(width)
+    courseMapResizeWidth = normalizedWidth
+    document.body?.style.setProperty("--ou-course-map-width", `${normalizedWidth}px`)
+    document.body?.style.setProperty("--drawer-left-width", `${normalizedWidth}px`)
   }
 
   function clampCourseMapWidth(width) {
-    const viewportLimit = Math.max(COURSE_MAP_MIN_WIDTH, Math.floor(window.innerWidth - 360));
-    const maxWidth = Math.max(COURSE_MAP_MIN_WIDTH, Math.min(COURSE_MAP_MAX_WIDTH, viewportLimit));
-    return clamp(Math.round(Number(width) || COURSE_MAP_DEFAULT_WIDTH), COURSE_MAP_MIN_WIDTH, maxWidth);
+    const viewportLimit = Math.max(COURSE_MAP_MIN_WIDTH, Math.floor(window.innerWidth - 360))
+    const maxWidth = Math.max(COURSE_MAP_MIN_WIDTH, Math.min(COURSE_MAP_MAX_WIDTH, viewportLimit))
+    return clamp(Math.round(Number(width) || COURSE_MAP_DEFAULT_WIDTH), COURSE_MAP_MIN_WIDTH, maxWidth)
   }
 
   function loadCourseMapWidthPreference() {
-    const fallbackWidth = readCourseMapWidthFromLocalStorage();
-    if (fallbackWidth) applyCourseMapWidth(fallbackWidth);
+    const fallbackWidth = readCourseMapWidthFromLocalStorage()
+    if (fallbackWidth) applyCourseMapWidth(fallbackWidth)
 
-    if (!isExtensionContextAvailable()) return;
+    if (!isExtensionContextAvailable()) return
     try {
       chrome.storage.sync.get([COURSE_MAP_WIDTH_STORAGE_KEY], (result) => {
         try {
-          if (chrome.runtime.lastError) return;
+          if (chrome.runtime.lastError) return
         } catch {
-          return;
+          return
         }
 
-        const storedWidth = Number(result?.[COURSE_MAP_WIDTH_STORAGE_KEY]);
-        if (Number.isFinite(storedWidth)) applyCourseMapWidth(storedWidth);
-      });
+        const storedWidth = Number(result?.[COURSE_MAP_WIDTH_STORAGE_KEY])
+        if (Number.isFinite(storedWidth)) applyCourseMapWidth(storedWidth)
+      })
     } catch {
       // Width preference is convenience-only; default width remains usable.
     }
   }
 
   function persistCourseMapWidthPreference(width) {
-    const normalizedWidth = clampCourseMapWidth(width);
+    const normalizedWidth = clampCourseMapWidth(width)
     try {
-      window.localStorage.setItem(COURSE_MAP_WIDTH_STORAGE_KEY, String(normalizedWidth));
+      window.localStorage.setItem(COURSE_MAP_WIDTH_STORAGE_KEY, String(normalizedWidth))
     } catch {
       // Private/storage-blocked contexts can still resize for the current page.
     }
 
-    if (!isExtensionContextAvailable()) return;
+    if (!isExtensionContextAvailable()) return
     try {
       chrome.storage.sync.set({ [COURSE_MAP_WIDTH_STORAGE_KEY]: normalizedWidth }, () => {
         try {
-          void chrome.runtime.lastError;
+          void chrome.runtime.lastError
         } catch {
           // Old content scripts may lose extension context while a reload is happening.
         }
-      });
+      })
     } catch {
       // The inline CSS variable already applied; persistence is best-effort.
     }
@@ -477,128 +477,128 @@
 
   function readCourseMapWidthFromLocalStorage() {
     try {
-      const width = Number(window.localStorage.getItem(COURSE_MAP_WIDTH_STORAGE_KEY));
-      return Number.isFinite(width) ? width : 0;
+      const width = Number(window.localStorage.getItem(COURSE_MAP_WIDTH_STORAGE_KEY))
+      return Number.isFinite(width) ? width : 0
     } catch {
-      return 0;
+      return 0
     }
   }
 
   function normalizeCourseActivityAnchorLinks(courseIndex) {
-    if (!IS_ELOLMS_COURSE_ACTIVITY) return;
+    if (!IS_ELOLMS_COURSE_ACTIVITY) return
 
-    const currentUrl = new URL(location.href);
+    const currentUrl = new URL(location.href)
     courseIndex.querySelectorAll('[data-for="cm"] .courseindex-link').forEach((link) => {
-      if (!(link instanceof HTMLAnchorElement)) return;
+      if (!(link instanceof HTMLAnchorElement)) return
 
-      const rawHref = (link.getAttribute("href") || "").trim();
-      if (!rawHref) return;
+      const rawHref = (link.getAttribute("href") || "").trim()
+      if (!rawHref) return
 
-      const anchorHash = getCourseMapActivityAnchorHash(link);
-      if (!anchorHash) return;
+      const anchorHash = getCourseMapActivityAnchorHash(link)
+      if (!anchorHash) return
 
-      const normalizedUrl = new URL(currentUrl.href);
-      normalizedUrl.hash = anchorHash;
-      link.href = normalizedUrl.href;
-      link.dataset.ouCourseMapAnchorNormalized = "true";
-    });
+      const normalizedUrl = new URL(currentUrl.href)
+      normalizedUrl.hash = anchorHash
+      link.href = normalizedUrl.href
+      link.dataset.ouCourseMapAnchorNormalized = "true"
+    })
   }
 
   function getCourseMapActivityAnchorHash(link) {
-    const rawHref = (link.getAttribute("href") || "").trim();
-    if (!rawHref) return "";
+    const rawHref = (link.getAttribute("href") || "").trim()
+    if (!rawHref) return ""
 
-    let linkUrl;
+    let linkUrl
     try {
-      linkUrl = new URL(rawHref, location.href);
+      linkUrl = new URL(rawHref, location.href)
     } catch {
-      return "";
+      return ""
     }
 
-    if (!/^#module-\d+$/i.test(linkUrl.hash)) return "";
+    if (!/^#module-\d+$/i.test(linkUrl.hash)) return ""
 
-    const isHashOnlyAnchor = rawHref.startsWith("#module-");
-    const isCourseOverviewAnchor = linkUrl.pathname.toLowerCase() === "/course/view.php";
-    const isNormalizedActivityAnchor = link.dataset.ouCourseMapAnchorNormalized === "true";
-    if (!isHashOnlyAnchor && !isCourseOverviewAnchor && !isNormalizedActivityAnchor) return "";
+    const isHashOnlyAnchor = rawHref.startsWith("#module-")
+    const isCourseOverviewAnchor = linkUrl.pathname.toLowerCase() === "/course/view.php"
+    const isNormalizedActivityAnchor = link.dataset.ouCourseMapAnchorNormalized === "true"
+    if (!isHashOnlyAnchor && !isCourseOverviewAnchor && !isNormalizedActivityAnchor) return ""
 
-    return linkUrl.hash;
+    return linkUrl.hash
   }
 
   function getCourseMapSectionAnchorHash(link) {
-    const rawHref = (link.getAttribute("href") || "").trim();
-    if (!rawHref) return "";
+    const rawHref = (link.getAttribute("href") || "").trim()
+    if (!rawHref) return ""
 
-    let linkUrl;
+    let linkUrl
     try {
-      linkUrl = new URL(rawHref, location.href);
+      linkUrl = new URL(rawHref, location.href)
     } catch {
-      return "";
+      return ""
     }
 
-    return /^#section-\d+$/i.test(linkUrl.hash) ? linkUrl.hash : "";
+    return /^#section-\d+$/i.test(linkUrl.hash) ? linkUrl.hash : ""
   }
 
   function markCourseMapCurrentSection(section) {
-    const courseIndex = document.getElementById("courseindex");
-    if (!courseIndex) return;
+    const courseIndex = document.getElementById("courseindex")
+    if (!courseIndex) return
 
     courseIndex.querySelectorAll(".ou-yeah-current-section").forEach((item) => {
-      item.classList.remove("ou-yeah-current-section");
-    });
-    section.classList.add("ou-yeah-current-section");
+      item.classList.remove("ou-yeah-current-section")
+    })
+    section.classList.add("ou-yeah-current-section")
   }
 
   function highlightCurrentCourseIndexModule(courseIndex) {
     courseIndex.querySelectorAll(".ou-yeah-current-module").forEach((item) => {
-      item.classList.remove("ou-yeah-current-module");
-      item.querySelector(".courseindex-link")?.removeAttribute("aria-current");
-    });
+      item.classList.remove("ou-yeah-current-module")
+      item.querySelector(".courseindex-link")?.removeAttribute("aria-current")
+    })
 
-    if (!IS_ELOLMS_COURSE_ACTIVITY) return;
+    if (!IS_ELOLMS_COURSE_ACTIVITY) return
 
-    const currentUrl = new URL(location.href);
-    const currentId = currentUrl.searchParams.get("id");
-    if (!currentId) return;
+    const currentUrl = new URL(location.href)
+    const currentId = currentUrl.searchParams.get("id")
+    if (!currentId) return
 
-    const currentPath = currentUrl.pathname.toLowerCase();
+    const currentPath = currentUrl.pathname.toLowerCase()
     const currentLink = Array.from(courseIndex.querySelectorAll('[data-for="cm"] .courseindex-link'))
       .find((link) => {
-        if (!(link instanceof HTMLAnchorElement)) return false;
-        if (link.dataset.ouCourseMapAnchorNormalized === "true") return false;
+        if (!(link instanceof HTMLAnchorElement)) return false
+        if (link.dataset.ouCourseMapAnchorNormalized === "true") return false
 
         try {
-          const linkUrl = new URL(link.href, location.href);
+          const linkUrl = new URL(link.href, location.href)
           return linkUrl.pathname.toLowerCase() === currentPath
-            && linkUrl.searchParams.get("id") === currentId;
+            && linkUrl.searchParams.get("id") === currentId
         } catch {
-          return false;
+          return false
         }
-      });
+      })
 
-    const currentItem = currentLink?.closest('[data-for="cm"]');
-    if (!(currentItem instanceof HTMLElement)) return;
+    const currentItem = currentLink?.closest('[data-for="cm"]')
+    if (!(currentItem instanceof HTMLElement)) return
 
-    currentItem.classList.add("ou-yeah-current-module");
-    currentLink?.setAttribute("aria-current", "page");
-    currentItem.closest('[data-for="section"]')?.classList.add("ou-yeah-current-section");
+    currentItem.classList.add("ou-yeah-current-module")
+    currentLink?.setAttribute("aria-current", "page")
+    currentItem.closest('[data-for="section"]')?.classList.add("ou-yeah-current-section")
 
-    const drawer = courseIndex.closest("#theme_boost-drawers-courseindex");
-    if (courseMapCurrentModuleScrolled || !(drawer instanceof HTMLElement) || !isCourseMapDrawerOpen(drawer)) return;
-    courseMapCurrentModuleScrolled = true;
+    const drawer = courseIndex.closest("#theme_boost-drawers-courseindex")
+    if (courseMapCurrentModuleScrolled || !(drawer instanceof HTMLElement) || !isCourseMapDrawerOpen(drawer)) return
+    courseMapCurrentModuleScrolled = true
     currentItem.scrollIntoView({
       behavior: "auto",
       block: "center",
       inline: "nearest"
-    });
+    })
   }
 
   function ensureCourseMapTools(drawer, courseIndex) {
-    let tools = drawer.querySelector(`#${COURSE_MAP_TOOLS_ID}`);
-    if (tools) return tools;
+    let tools = drawer.querySelector(`#${COURSE_MAP_TOOLS_ID}`)
+    if (tools) return tools
 
-    tools = document.createElement("section");
-    tools.id = COURSE_MAP_TOOLS_ID;
+    tools = document.createElement("section")
+    tools.id = COURSE_MAP_TOOLS_ID
     tools.innerHTML = `
       <div class="ou-course-map-heading">
         <div>
@@ -616,88 +616,88 @@
         <span data-course-map-stat="modules">0 tài nguyên</span>
         <span data-course-map-stat="progress">Theo dõi tiến độ</span>
       </div>
-    `;
+    `
 
-    const input = tools.querySelector("input");
+    const input = tools.querySelector("input")
     if (input instanceof HTMLInputElement) {
-      input.addEventListener("input", () => applyCourseMapFilter(courseIndex, input.value));
+      input.addEventListener("input", () => applyCourseMapFilter(courseIndex, input.value))
     }
     tools.querySelector("[data-course-map-action='current']")?.addEventListener("click", () => {
-      const current = courseIndex.querySelector(".ou-yeah-current-section");
+      const current = courseIndex.querySelector(".ou-yeah-current-section")
       current?.scrollIntoView({
         behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
         block: "center"
-      });
-    });
+      })
+    })
 
-    courseIndex.parentElement?.insertBefore(tools, courseIndex);
-    return tools;
+    courseIndex.parentElement?.insertBefore(tools, courseIndex)
+    return tools
   }
 
   function annotateCourseMap(courseIndex) {
-    const sections = Array.from(courseIndex.querySelectorAll('[data-for="section"]'));
+    const sections = Array.from(courseIndex.querySelectorAll('[data-for="section"]'))
     sections.forEach((section, index) => {
-      const titleItem = section.querySelector(':scope > [data-for="section_item"], :scope > .courseindex-section-title');
-      const link = titleItem?.querySelector(".courseindex-link");
-      const title = cleanCourseMapTitle(link?.textContent || titleItem?.textContent || section.textContent || "");
-      const depth = Math.min(3, courseMapDepth(section, courseIndex));
+      const titleItem = section.querySelector(':scope > [data-for="section_item"], :scope > .courseindex-section-title')
+      const link = titleItem?.querySelector(".courseindex-link")
+      const title = cleanCourseMapTitle(link?.textContent || titleItem?.textContent || section.textContent || "")
+      const depth = Math.min(3, courseMapDepth(section, courseIndex))
 
-      section.dataset.ouCourseMapSection = "true";
-      section.dataset.ouCourseMapDepth = String(depth);
-      section.dataset.ouCourseMapText = normalizeCourseMapText(title);
-      titleItem?.setAttribute("data-ou-course-map-title", "");
-      titleItem?.setAttribute("data-ou-course-map-number", String(index + 1).padStart(2, "0"));
-      if (link) link.setAttribute("title", title);
-    });
+      section.dataset.ouCourseMapSection = "true"
+      section.dataset.ouCourseMapDepth = String(depth)
+      section.dataset.ouCourseMapText = normalizeCourseMapText(title)
+      titleItem?.setAttribute("data-ou-course-map-title", "")
+      titleItem?.setAttribute("data-ou-course-map-number", String(index + 1).padStart(2, "0"))
+      if (link) link.setAttribute("title", title)
+    })
 
     courseIndex.querySelectorAll('[data-for="cm"]').forEach((item) => {
-      const link = item.querySelector(".courseindex-link");
-      const title = cleanCourseMapTitle(link?.textContent || item.textContent || "");
-      const kind = classifyCourseMapModule(title, link?.getAttribute("href") || "");
-      item.dataset.ouCourseMapKind = kind;
-      item.dataset.ouCourseMapKindLabel = courseMapKindLabel(kind);
-      item.dataset.ouCourseMapText = normalizeCourseMapText(title);
-      if (link) link.setAttribute("title", title);
-    });
+      const link = item.querySelector(".courseindex-link")
+      const title = cleanCourseMapTitle(link?.textContent || item.textContent || "")
+      const kind = classifyCourseMapModule(title, link?.getAttribute("href") || "")
+      item.dataset.ouCourseMapKind = kind
+      item.dataset.ouCourseMapKindLabel = courseMapKindLabel(kind)
+      item.dataset.ouCourseMapText = normalizeCourseMapText(title)
+      if (link) link.setAttribute("title", title)
+    })
   }
 
   function courseMapDepth(section, courseIndex) {
-    let depth = 0;
-    let current = section.parentElement;
+    let depth = 0
+    let current = section.parentElement
     while (current && current !== courseIndex) {
-      if (current.classList.contains("courseindex-item-content")) depth += 1;
-      current = current.parentElement;
+      if (current.classList.contains("courseindex-item-content")) depth += 1
+      current = current.parentElement
     }
-    return depth;
+    return depth
   }
 
   function ensureGeneralCourseSection() {
-    const section = document.querySelector(".course-content #section-0.course-section");
-    if (!(section instanceof HTMLElement)) return null;
+    const section = document.querySelector(".course-content #section-0.course-section")
+    if (!(section instanceof HTMLElement)) return null
 
-    const header = section.querySelector(":scope > .course-section-header");
-    const content = section.querySelector(":scope > .content, :scope > .course-section-content");
-    if (!(header instanceof HTMLElement) || !(content instanceof HTMLElement)) return null;
+    const header = section.querySelector(":scope > .course-section-header")
+    const content = section.querySelector(":scope > .content, :scope > .course-section-content")
+    if (!(header instanceof HTMLElement) || !(content instanceof HTMLElement)) return null
 
-    section.classList.add("ou-yeah-general-section");
-    if (!content.id) content.id = "coursecontentcollapse0";
-    content.classList.add("collapse");
+    section.classList.add("ou-yeah-general-section")
+    if (!content.id) content.id = "coursecontentcollapse0"
+    content.classList.add("collapse")
 
-    let toggle = document.getElementById(COURSE_GENERAL_TOGGLE_ID);
+    let toggle = document.getElementById(COURSE_GENERAL_TOGGLE_ID)
     if (!(toggle instanceof HTMLElement) || !section.contains(toggle)) {
-      const host = header.querySelector(":scope > .d-flex.align-items-start.position-relative");
-      if (!(host instanceof HTMLElement)) return null;
+      const host = header.querySelector(":scope > .d-flex.align-items-start.position-relative")
+      if (!(host instanceof HTMLElement)) return null
 
-      const titleRow = document.createElement("div");
-      titleRow.className = "d-flex align-items-start position-relative ou-yeah-general-section-title";
+      const titleRow = document.createElement("div")
+      titleRow.className = "d-flex align-items-start position-relative ou-yeah-general-section-title"
 
-      toggle = document.createElement("a");
-      toggle.id = COURSE_GENERAL_TOGGLE_ID;
-      toggle.className = "btn btn-icon mr-1 icons-collapse-expand justify-content-center stretched-link";
-      toggle.setAttribute("href", `#${content.id}`);
-      toggle.setAttribute("role", "button");
-      toggle.setAttribute("aria-controls", content.id);
-      toggle.setAttribute("aria-label", "Chung");
+      toggle = document.createElement("a")
+      toggle.id = COURSE_GENERAL_TOGGLE_ID
+      toggle.className = "btn btn-icon mr-1 icons-collapse-expand justify-content-center stretched-link"
+      toggle.setAttribute("href", `#${content.id}`)
+      toggle.setAttribute("role", "button")
+      toggle.setAttribute("aria-controls", content.id)
+      toggle.setAttribute("aria-label", "Chung")
       toggle.innerHTML = `
         <span class="expanded-icon icon-no-margin p-2" title="Thu gọn">
           <i class="icon fa fa-chevron-down fa-fw" aria-hidden="true"></i>
@@ -706,255 +706,255 @@
           <span class="dir-rtl-hide"><i class="icon fa fa-chevron-right fa-fw" aria-hidden="true"></i></span>
           <span class="dir-ltr-hide"><i class="icon fa fa-chevron-left fa-fw" aria-hidden="true"></i></span>
         </span>
-      `;
+      `
       toggle.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.isTrusted) courseMapUserToggledSections = true;
-        setGeneralCourseSectionExpanded(!isCollapseContentOpen(content));
-        scheduleCourseMapRefresh();
-      });
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.isTrusted) courseMapUserToggledSections = true
+        setGeneralCourseSectionExpanded(!isCollapseContentOpen(content))
+        scheduleCourseMapRefresh()
+      })
 
-      const title = document.createElement("h3");
-      title.className = "sectionname course-content-item d-flex align-self-stretch align-items-center mb-0";
-      title.dataset.ouGeneralSectionTitle = "true";
-      title.textContent = "Chung";
+      const title = document.createElement("h3")
+      title.className = "sectionname course-content-item d-flex align-self-stretch align-items-center mb-0"
+      title.dataset.ouGeneralSectionTitle = "true"
+      title.textContent = "Chung"
 
-      titleRow.append(toggle, title);
-      host.appendChild(titleRow);
+      titleRow.append(toggle, title)
+      host.appendChild(titleRow)
     }
 
-    syncGeneralCourseSectionToggle(section);
-    return section;
+    syncGeneralCourseSectionToggle(section)
+    return section
   }
 
   function setGeneralCourseSectionExpanded(expanded) {
-    const section = document.querySelector(".course-content #section-0.course-section");
-    const content = section?.querySelector(":scope > .content, :scope > .course-section-content");
-    if (!(section instanceof HTMLElement) || !(content instanceof HTMLElement)) return;
+    const section = document.querySelector(".course-content #section-0.course-section")
+    const content = section?.querySelector(":scope > .content, :scope > .course-section-content")
+    if (!(section instanceof HTMLElement) || !(content instanceof HTMLElement)) return
 
-    content.classList.remove("collapsing");
-    content.classList.add("collapse");
-    content.classList.toggle("show", expanded);
-    content.style.removeProperty("height");
-    content.hidden = !expanded;
-    content.setAttribute("aria-hidden", String(!expanded));
-    section.classList.toggle("ou-yeah-section-open", expanded);
-    syncGeneralCourseSectionToggle(section);
+    content.classList.remove("collapsing")
+    content.classList.add("collapse")
+    content.classList.toggle("show", expanded)
+    content.style.removeProperty("height")
+    content.hidden = !expanded
+    content.setAttribute("aria-hidden", String(!expanded))
+    section.classList.toggle("ou-yeah-section-open", expanded)
+    syncGeneralCourseSectionToggle(section)
   }
 
   function scheduleGeneralCourseSectionGlobalSync(globalToggle) {
     const sync = () => {
-      if (!globalToggle.isConnected) return;
-      setGeneralCourseSectionExpanded(isCourseSectionToggleOpen(globalToggle));
-    };
+      if (!globalToggle.isConnected) return
+      setGeneralCourseSectionExpanded(isCourseSectionToggleOpen(globalToggle))
+    }
 
-    window.setTimeout(sync, 0);
-    window.setTimeout(sync, 120);
-    window.setTimeout(sync, 520);
+    window.setTimeout(sync, 0)
+    window.setTimeout(sync, 120)
+    window.setTimeout(sync, 520)
   }
 
   function syncGeneralCourseSectionToggle(section) {
-    const toggle = section.querySelector(`#${COURSE_GENERAL_TOGGLE_ID}`);
-    const content = section.querySelector(":scope > .content, :scope > .course-section-content");
-    if (!(toggle instanceof HTMLElement) || !(content instanceof HTMLElement)) return;
+    const toggle = section.querySelector(`#${COURSE_GENERAL_TOGGLE_ID}`)
+    const content = section.querySelector(":scope > .content, :scope > .course-section-content")
+    if (!(toggle instanceof HTMLElement) || !(content instanceof HTMLElement)) return
 
-    const expanded = isCollapseContentOpen(content);
-    toggle.classList.toggle("collapsed", !expanded);
-    toggle.setAttribute("aria-expanded", String(expanded));
+    const expanded = isCollapseContentOpen(content)
+    toggle.classList.toggle("collapsed", !expanded)
+    toggle.setAttribute("aria-expanded", String(expanded))
   }
 
   function annotateOpenCourseSections() {
     document.querySelectorAll(".course-content .course-section").forEach((section) => {
-      if (!(section instanceof HTMLElement)) return;
-      const title = cleanCourseMapTitle(section.querySelector(":scope > .course-section-header .sectionname")?.textContent || "");
+      if (!(section instanceof HTMLElement)) return
+      const title = cleanCourseMapTitle(section.querySelector(":scope > .course-section-header .sectionname")?.textContent || "")
       if (!title) {
-        section.classList.remove("ou-yeah-section-open");
-        return;
+        section.classList.remove("ou-yeah-section-open")
+        return
       }
-      section.classList.toggle("ou-yeah-section-open", isCourseSectionExpanded(section));
-    });
+      section.classList.toggle("ou-yeah-section-open", isCourseSectionExpanded(section))
+    })
   }
 
   function applyDefaultCollapsedCourseSections() {
-    if (courseMapDefaultCollapseApplied || courseMapUserToggledSections) return;
+    if (courseMapDefaultCollapseApplied || courseMapUserToggledSections) return
 
-    const toggles = getCourseSectionCollapseToggles();
-    const generalContent = document.querySelector(".course-content #section-0.course-section > .content, .course-content #section-0.course-section > .course-section-content");
-    if (!toggles.length && !(generalContent instanceof HTMLElement)) return;
+    const toggles = getCourseSectionCollapseToggles()
+    const generalContent = document.querySelector(".course-content #section-0.course-section > .content, .course-content #section-0.course-section > .course-section-content")
+    if (!toggles.length && !(generalContent instanceof HTMLElement)) return
 
-    const openToggles = toggles.filter((toggle) => isCourseSectionToggleOpen(toggle));
+    const openToggles = toggles.filter((toggle) => isCourseSectionToggleOpen(toggle))
     const openContents = Array.from(document.querySelectorAll(".course-content .course-section > .content.collapse.show, .course-content .course-section > .course-section-content.collapse.show"))
-      .filter((content) => content instanceof HTMLElement && content.closest("#section-0") == null);
-    const generalOpen = generalContent instanceof HTMLElement && isCollapseContentOpen(generalContent);
+      .filter((content) => content instanceof HTMLElement && content.closest("#section-0") == null)
+    const generalOpen = generalContent instanceof HTMLElement && isCollapseContentOpen(generalContent)
 
     if (!openToggles.length && !openContents.length && !generalOpen) {
-      courseMapDefaultCollapseApplied = true;
-      return;
+      courseMapDefaultCollapseApplied = true
+      return
     }
 
-    courseMapDefaultCollapseApplied = true;
-    courseMapDefaultCollapseInProgress = true;
-    setGeneralCourseSectionExpanded(false);
+    courseMapDefaultCollapseApplied = true
+    courseMapDefaultCollapseInProgress = true
+    setGeneralCourseSectionExpanded(false)
 
-    const globalToggle = document.querySelector("#collapsesections, .section-collapsemenu[data-toggle='toggleall'], .section-collapsemenu[data-bs-toggle='toggleall']");
+    const globalToggle = document.querySelector("#collapsesections, .section-collapsemenu[data-toggle='toggleall'], .section-collapsemenu[data-bs-toggle='toggleall']")
     if (globalToggle instanceof HTMLElement && isCourseSectionToggleOpen(globalToggle)) {
-      globalToggle.click();
+      globalToggle.click()
     } else {
       openToggles.forEach((toggle) => {
-        if (toggle instanceof HTMLElement) toggle.click();
-      });
+        if (toggle instanceof HTMLElement) toggle.click()
+      })
     }
 
     window.setTimeout(() => {
-      courseMapDefaultCollapseInProgress = false;
-      annotateOpenCourseSections();
-    }, 900);
+      courseMapDefaultCollapseInProgress = false
+      annotateOpenCourseSections()
+    }, 900)
   }
 
   function getCourseSectionCollapseToggles() {
     return Array.from(document.querySelectorAll(".course-content .course-section > .course-section-header [data-toggle='collapse'], .course-content .course-section > .course-section-header [data-bs-toggle='collapse']"))
-      .filter((toggle) => toggle instanceof HTMLElement && toggle.closest("#section-0") == null);
+      .filter((toggle) => toggle instanceof HTMLElement && toggle.closest("#section-0") == null)
   }
 
   function isCourseSectionToggleOpen(toggle) {
-    const target = collapseTargetForToggle(toggle);
-    if (target) return isCollapseContentOpen(target);
-    if (toggle.getAttribute("aria-expanded") === "true") return true;
-    if (toggle.classList.contains("collapsed")) return false;
-    return false;
+    const target = collapseTargetForToggle(toggle)
+    if (target) return isCollapseContentOpen(target)
+    if (toggle.getAttribute("aria-expanded") === "true") return true
+    if (toggle.classList.contains("collapsed")) return false
+    return false
   }
 
   function isCourseSectionExpanded(section) {
-    const header = section.querySelector(":scope > .course-section-header");
-    const collapse = section.querySelector(":scope > .content.collapse, :scope > .content .collapse, :scope > .course-section-content.collapse");
-    if (collapse instanceof HTMLElement) return isCollapseContentOpen(collapse);
+    const header = section.querySelector(":scope > .course-section-header")
+    const collapse = section.querySelector(":scope > .content.collapse, :scope > .content .collapse, :scope > .course-section-content.collapse")
+    if (collapse instanceof HTMLElement) return isCollapseContentOpen(collapse)
 
     const toggle = Array.from(header?.querySelectorAll("[aria-expanded]") || [])
-      .find((element) => !element.classList.contains("section-collapsemenu"));
-    if (toggle) return toggle.getAttribute("aria-expanded") === "true";
+      .find((element) => !element.classList.contains("section-collapsemenu"))
+    if (toggle) return toggle.getAttribute("aria-expanded") === "true"
 
-    const content = section.querySelector(":scope > .content, :scope > .section-content");
-    if (!(content instanceof HTMLElement)) return false;
-    if (content.hidden || content.style.display === "none") return false;
-    return content.offsetParent !== null && Boolean(content.textContent?.trim());
+    const content = section.querySelector(":scope > .content, :scope > .section-content")
+    if (!(content instanceof HTMLElement)) return false
+    if (content.hidden || content.style.display === "none") return false
+    return content.offsetParent !== null && Boolean(content.textContent?.trim())
   }
 
   function collapseTargetForToggle(toggle) {
     const selector = toggle.getAttribute("data-target")
       || toggle.getAttribute("data-bs-target")
-      || toggle.getAttribute("href");
-    if (!selector || !selector.startsWith("#")) return null;
-    return document.getElementById(selector.slice(1));
+      || toggle.getAttribute("href")
+    if (!selector || !selector.startsWith("#")) return null
+    return document.getElementById(selector.slice(1))
   }
 
   function isCollapseContentOpen(collapse) {
-    if (collapse.classList.contains("show")) return true;
-    if (collapse.classList.contains("collapsing")) return collapse.getBoundingClientRect().height > 1;
-    if (collapse.classList.contains("collapse")) return false;
-    if (collapse.hidden || collapse.style.display === "none") return false;
-    return collapse.getBoundingClientRect().height > 1;
+    if (collapse.classList.contains("show")) return true
+    if (collapse.classList.contains("collapsing")) return collapse.getBoundingClientRect().height > 1
+    if (collapse.classList.contains("collapse")) return false
+    if (collapse.hidden || collapse.style.display === "none") return false
+    return collapse.getBoundingClientRect().height > 1
   }
 
   function updateCourseMapStats(drawer, courseIndex) {
-    const tools = drawer.querySelector(`#${COURSE_MAP_TOOLS_ID}`);
-    if (!tools) return;
+    const tools = drawer.querySelector(`#${COURSE_MAP_TOOLS_ID}`)
+    if (!tools) return
 
-    const sectionCount = courseIndex.querySelectorAll('[data-ou-course-map-section="true"]').length;
-    const moduleCount = courseIndex.querySelectorAll('[data-for="cm"]').length;
-    const progress = /(?:completed|hoàn thành)\s*(\d+)%|(\d+)%/i.exec(drawer.textContent || "");
+    const sectionCount = courseIndex.querySelectorAll('[data-ou-course-map-section="true"]').length
+    const moduleCount = courseIndex.querySelectorAll('[data-for="cm"]').length
+    const progress = /(?:completed|hoàn thành)\s*(\d+)%|(\d+)%/i.exec(drawer.textContent || "")
 
-    const sectionStat = tools.querySelector('[data-course-map-stat="sections"]');
-    const moduleStat = tools.querySelector('[data-course-map-stat="modules"]');
-    const progressStat = tools.querySelector('[data-course-map-stat="progress"]');
-    if (sectionStat) sectionStat.textContent = `${sectionCount} mục`;
-    if (moduleStat) moduleStat.textContent = `${moduleCount} tài nguyên`;
-    if (progressStat) progressStat.textContent = progress ? `${progress[1] || progress[2]}% hoàn tất` : "Course Map";
+    const sectionStat = tools.querySelector('[data-course-map-stat="sections"]')
+    const moduleStat = tools.querySelector('[data-course-map-stat="modules"]')
+    const progressStat = tools.querySelector('[data-course-map-stat="progress"]')
+    if (sectionStat) sectionStat.textContent = `${sectionCount} mục`
+    if (moduleStat) moduleStat.textContent = `${moduleCount} tài nguyên`
+    if (progressStat) progressStat.textContent = progress ? `${progress[1] || progress[2]}% hoàn tất` : "Course Map"
   }
 
   function applyCourseMapFilter(courseIndex, query) {
-    const normalized = normalizeCourseMapText(query);
-    courseIndex.classList.toggle("ou-yeah-course-map-filtering", Boolean(normalized));
+    const normalized = normalizeCourseMapText(query)
+    courseIndex.classList.toggle("ou-yeah-course-map-filtering", Boolean(normalized))
 
     courseIndex.querySelectorAll('[data-for="cm"]').forEach((item) => {
-      const matches = !normalized || (item.dataset.ouCourseMapText || "").includes(normalized);
-      item.dataset.ouCourseMapHidden = String(!matches);
-    });
+      const matches = !normalized || (item.dataset.ouCourseMapText || "").includes(normalized)
+      item.dataset.ouCourseMapHidden = String(!matches)
+    })
 
     courseIndex.querySelectorAll('[data-for="section"]').forEach((section) => {
-      const sectionMatches = !normalized || (section.dataset.ouCourseMapText || "").includes(normalized);
+      const sectionMatches = !normalized || (section.dataset.ouCourseMapText || "").includes(normalized)
       const childMatches = Array.from(section.querySelectorAll('[data-for="cm"], [data-for="section"]')).some((item) => {
-        return (item.dataset.ouCourseMapText || "").includes(normalized);
-      });
-      section.dataset.ouCourseMapHidden = String(Boolean(normalized) && !sectionMatches && !childMatches);
+        return (item.dataset.ouCourseMapText || "").includes(normalized)
+      })
+      section.dataset.ouCourseMapHidden = String(Boolean(normalized) && !sectionMatches && !childMatches)
       if (sectionMatches && normalized) {
         section.querySelectorAll(':scope [data-for="cm"]').forEach((item) => {
-          item.dataset.ouCourseMapHidden = "false";
-        });
+          item.dataset.ouCourseMapHidden = "false"
+        })
       }
-    });
+    })
   }
 
   function updateCourseMapCurrentSection() {
-    const courseIndex = document.getElementById("courseindex");
-    if (!courseIndex) return;
+    const courseIndex = document.getElementById("courseindex")
+    if (!courseIndex) return
 
-    if (markCourseMapCurrentSectionFromHash(courseIndex)) return;
+    if (markCourseMapCurrentSectionFromHash(courseIndex)) return
 
     const sections = Array.from(document.querySelectorAll("#region-main [id^='section-']"))
-      .filter((section) => section instanceof HTMLElement);
-    if (!sections.length) return;
+      .filter((section) => section instanceof HTMLElement)
+    if (!sections.length) return
 
-    let current = sections[0];
+    let current = sections[0]
     for (const section of sections) {
-      const rect = section.getBoundingClientRect();
-      if (rect.top <= 180 && rect.bottom > 120) current = section;
+      const rect = section.getBoundingClientRect()
+      if (rect.top <= 180 && rect.bottom > 120) current = section
     }
 
     courseIndex.querySelectorAll(".ou-yeah-current-section").forEach((item) => {
-      item.classList.remove("ou-yeah-current-section");
-    });
+      item.classList.remove("ou-yeah-current-section")
+    })
 
-    if (!current.id) return;
-    const selector = `.courseindex-link[href$="#${CSS.escape(current.id)}"], .courseindex-link[href*="#${CSS.escape(current.id)}"]`;
-    const link = courseIndex.querySelector(selector);
-    const section = link?.closest('[data-for="section"]');
-    if (section instanceof HTMLElement) markCourseMapCurrentSection(section);
+    if (!current.id) return
+    const selector = `.courseindex-link[href$="#${CSS.escape(current.id)}"], .courseindex-link[href*="#${CSS.escape(current.id)}"]`
+    const link = courseIndex.querySelector(selector)
+    const section = link?.closest('[data-for="section"]')
+    if (section instanceof HTMLElement) markCourseMapCurrentSection(section)
   }
 
   function markCourseMapCurrentSectionFromHash(courseIndex) {
-    if (!/^#section-\d+$/i.test(location.hash)) return false;
+    if (!/^#section-\d+$/i.test(location.hash)) return false
 
-    const section = findCourseMapSectionByHash(courseIndex, location.hash);
-    if (!(section instanceof HTMLElement)) return false;
+    const section = findCourseMapSectionByHash(courseIndex, location.hash)
+    if (!(section instanceof HTMLElement)) return false
 
-    markCourseMapCurrentSection(section);
-    return true;
+    markCourseMapCurrentSection(section)
+    return true
   }
 
   function findCourseMapSectionByHash(courseIndex, hash) {
-    const links = Array.from(courseIndex.querySelectorAll("[data-ou-course-map-title] .courseindex-link"));
+    const links = Array.from(courseIndex.querySelectorAll("[data-ou-course-map-title] .courseindex-link"))
     const link = links.find((candidate) => {
-      if (!(candidate instanceof HTMLAnchorElement)) return false;
+      if (!(candidate instanceof HTMLAnchorElement)) return false
       try {
-        return new URL(candidate.getAttribute("href") || candidate.href, location.href).hash === hash;
+        return new URL(candidate.getAttribute("href") || candidate.href, location.href).hash === hash
       } catch {
-        return false;
+        return false
       }
-    });
+    })
 
-    return link?.closest('[data-for="section"]') || null;
+    return link?.closest('[data-for="section"]') || null
   }
 
   function classifyCourseMapModule(title, href) {
-    const normalized = normalizeCourseMapText(`${title} ${href}`);
-    if (/video|xem|conference|page\/view/.test(normalized)) return "video";
-    if (/slide|powerpoint|presentation/.test(normalized)) return "slide";
-    if (/script|tai lieu|resource\/view|tai ve|download/.test(normalized)) return "file";
-    if (/forum|dien dan|thao luan|tra loi/.test(normalized)) return "forum";
-    if (/assignment|bai tap|nop bai|quiz|kiem tra/.test(normalized)) return "assignment";
-    if (/calendar|lich/.test(normalized)) return "calendar";
-    return "page";
+    const normalized = normalizeCourseMapText(`${title} ${href}`)
+    if (/video|xem|conference|page\/view/.test(normalized)) return "video"
+    if (/slide|powerpoint|presentation/.test(normalized)) return "slide"
+    if (/script|tai lieu|resource\/view|tai ve|download/.test(normalized)) return "file"
+    if (/forum|dien dan|thao luan|tra loi/.test(normalized)) return "forum"
+    if (/assignment|bai tap|nop bai|quiz|kiem tra/.test(normalized)) return "assignment"
+    if (/calendar|lich/.test(normalized)) return "calendar"
+    return "page"
   }
 
   function courseMapKindLabel(kind) {
@@ -966,14 +966,14 @@
       page: "DOC",
       slide: "SLD",
       video: "VID"
-    }[kind] || "DOC";
+    }[kind] || "DOC"
   }
 
   function cleanCourseMapTitle(value) {
     return String(value || "")
       .replace(/\b(Mở rộng|Rút gọn|Đã được nhấn mạnh|Completed|Hoàn thành)\b/gi, " ")
       .replace(/\s+/g, " ")
-      .trim();
+      .trim()
   }
 
   function normalizeCourseMapText(value) {
@@ -984,16 +984,16 @@
       .replace(/Đ/g, "D")
       .replace(/\s+/g, " ")
       .trim()
-      .toLowerCase();
+      .toLowerCase()
   }
 
   function injectCourseMapTheme() {
-    if (document.getElementById(COURSE_MAP_STYLE_ID)) return;
+    if (document.getElementById(COURSE_MAP_STYLE_ID)) return
 
-    const style = document.createElement("style");
-    style.id = COURSE_MAP_STYLE_ID;
-    style.textContent = courseMapCss();
-    document.documentElement.appendChild(style);
+    const style = document.createElement("style")
+    style.id = COURSE_MAP_STYLE_ID
+    style.textContent = courseMapCss()
+    document.documentElement.appendChild(style)
   }
 
   function courseMapCss() {
@@ -1726,77 +1726,77 @@
         font-size: 13px !important;
         margin: 0 !important;
       }
-    `;
+    `
   }
 
   function scheduleNotificationPopoverRefresh() {
-    window.clearTimeout(notificationPopoverTimer);
-    notificationPopoverTimer = window.setTimeout(refreshNotificationPopover, 80);
+    window.clearTimeout(notificationPopoverTimer)
+    notificationPopoverTimer = window.setTimeout(refreshNotificationPopover, 80)
   }
 
   function refreshNotificationPopover() {
-    const root = document.getElementById("nav-notification-popover-container");
-    if (!root) return;
+    const root = document.getElementById("nav-notification-popover-container")
+    if (!root) return
 
-    root.classList.add("ou-yeah-popover-themed");
-    relabelNotificationPopoverLinks(root);
-    annotateNotificationPopoverItems(root);
+    root.classList.add("ou-yeah-popover-themed")
+    relabelNotificationPopoverLinks(root)
+    annotateNotificationPopoverItems(root)
   }
 
   function relabelNotificationPopoverLinks(root) {
-    const seeAll = root.querySelector(".see-all-link");
+    const seeAll = root.querySelector(".see-all-link")
     if (seeAll) {
-      seeAll.textContent = "Xem tất cả";
-      seeAll.setAttribute("aria-label", "Xem tất cả thông báo");
+      seeAll.textContent = "Xem tất cả"
+      seeAll.setAttribute("aria-label", "Xem tất cả thông báo")
     }
 
     root.querySelectorAll(".view-more").forEach((link) => {
-      link.textContent = "Chi tiết";
-      link.setAttribute("aria-label", "Xem chi tiết thông báo");
-    });
+      link.textContent = "Chi tiết"
+      link.setAttribute("aria-label", "Xem chi tiết thông báo")
+    })
   }
 
   function annotateNotificationPopoverItems(root) {
     root.querySelectorAll('[data-region="notification-content-item-container"]').forEach((item) => {
-      const message = item.querySelector(".notification-message")?.textContent?.replace(/\s+/g, " ").trim() || "";
-      const ariaLabel = item.getAttribute("aria-label") || item.firstElementChild?.getAttribute("aria-label") || "";
-      const type = classifyNotificationPopoverItem(message);
-      const isUnread = item.classList.contains("unread") || normalizeNotificationPopoverText(ariaLabel).includes("chua doc");
+      const message = item.querySelector(".notification-message")?.textContent?.replace(/\s+/g, " ").trim() || ""
+      const ariaLabel = item.getAttribute("aria-label") || item.firstElementChild?.getAttribute("aria-label") || ""
+      const type = classifyNotificationPopoverItem(message)
+      const isUnread = item.classList.contains("unread") || normalizeNotificationPopoverText(ariaLabel).includes("chua doc")
       const file = isUnread
         ? NOTIFICATION_UNREAD_ICON_FILE
-        : NOTIFICATION_TYPE_ICON_FILES[type] || NOTIFICATION_TYPE_ICON_FILES.system;
+        : NOTIFICATION_TYPE_ICON_FILES[type] || NOTIFICATION_TYPE_ICON_FILES.system
 
-      item.dataset.ouPopupType = type;
-      item.dataset.ouPopupUnread = String(isUnread);
-      item.dataset.ouPopupIcon = file.replace(/\.svg$/i, "");
+      item.dataset.ouPopupType = type
+      item.dataset.ouPopupUnread = String(isUnread)
+      item.dataset.ouPopupIcon = file.replace(/\.svg$/i, "")
 
-      const iconUrl = notificationPopoverIconUrl(file);
+      const iconUrl = notificationPopoverIconUrl(file)
       if (iconUrl) {
-        item.dataset.ouPopupIconReady = "true";
-        item.style.setProperty("--ou-popup-icon", `url("${iconUrl}")`);
+        item.dataset.ouPopupIconReady = "true"
+        item.style.setProperty("--ou-popup-icon", `url("${iconUrl}")`)
       } else {
-        item.dataset.ouPopupIconReady = "false";
+        item.dataset.ouPopupIconReady = "false"
       }
-    });
+    })
   }
 
   function classifyNotificationPopoverItem(message) {
-    const normalized = normalizeNotificationPopoverText(message);
+    const normalized = normalizeNotificationPopoverText(message)
     // A forum reply may mention a meeting title; classify the reply event first.
-    if (/tra loi:|thao luan|dien dan|forum|chu de|nhom\s*\d+/.test(normalized)) return "discussion";
-    if (/video conference|zoom|google meet|lich hoc|thoi gian to chuc|hop truc tuyen/.test(normalized)) return "meeting";
-    if (/da nop|nop bai|bai tap lon|assignment|quiz|deadline|han nop/.test(normalized)) return "assignment";
-    if (/thong bao|announcement|giang vien|thay|co |kiem tra|de lam tot/.test(normalized)) return "announcement";
-    return "system";
+    if (/tra loi:|thao luan|dien dan|forum|chu de|nhom\s*\d+/.test(normalized)) return "discussion"
+    if (/video conference|zoom|google meet|lich hoc|thoi gian to chuc|hop truc tuyen/.test(normalized)) return "meeting"
+    if (/da nop|nop bai|bai tap lon|assignment|quiz|deadline|han nop/.test(normalized)) return "assignment"
+    if (/thong bao|announcement|giang vien|thay|co |kiem tra|de lam tot/.test(normalized)) return "announcement"
+    return "system"
   }
 
   function notificationPopoverIconUrl(file) {
-    if (!isExtensionContextAvailable()) return "";
+    if (!isExtensionContextAvailable()) return ""
 
     try {
-      return chrome.runtime.getURL(`src/icons/${file}`);
+      return chrome.runtime.getURL(`src/icons/${file}`)
     } catch {
-      return "";
+      return ""
     }
   }
 
@@ -1808,16 +1808,16 @@
       .replace(/Đ/g, "D")
       .replace(/\s+/g, " ")
       .trim()
-      .toLowerCase();
+      .toLowerCase()
   }
 
   function injectNotificationPopoverTheme() {
-    if (document.getElementById(NOTIFICATION_POPOVER_STYLE_ID)) return;
+    if (document.getElementById(NOTIFICATION_POPOVER_STYLE_ID)) return
 
-    const style = document.createElement("style");
-    style.id = NOTIFICATION_POPOVER_STYLE_ID;
-    style.textContent = notificationPopoverCss();
-    document.documentElement.appendChild(style);
+    const style = document.createElement("style")
+    style.id = NOTIFICATION_POPOVER_STYLE_ID
+    style.textContent = notificationPopoverCss()
+    document.documentElement.appendChild(style)
   }
 
   function notificationPopoverCss() {
@@ -2082,24 +2082,24 @@
         border-top: 1px solid var(--ou-popup-line);
         background: #fff;
       }
-    `;
+    `
   }
 
   function initBookDownloader() {
-    if (window.top !== window.self) return;
+    if (window.top !== window.self) return
 
-    bindBookDownloadMessages();
-    injectBookDownloadButton();
+    bindBookDownloadMessages()
+    injectBookDownloadButton()
   }
 
   function injectBookDownloadButton() {
-    if (document.getElementById(BOOK_DOWNLOAD_ID)) return true;
+    if (document.getElementById(BOOK_DOWNLOAD_ID)) return true
 
-    const host = document.createElement("div");
-    host.id = BOOK_DOWNLOAD_ID;
-    const root = host.attachShadow({ mode: "open" });
-    const book = readBookConfig();
-    bookTotalPages = book?.totalPages || 0;
+    const host = document.createElement("div")
+    host.id = BOOK_DOWNLOAD_ID
+    const root = host.attachShadow({ mode: "open" })
+    const book = readBookConfig()
+    bookTotalPages = book?.totalPages || 0
 
     root.innerHTML = `
       <style>${bookDownloadCss()}</style>
@@ -2118,16 +2118,16 @@
           </span>
         </span>
       </div>
-    `;
+    `
 
-    document.documentElement.appendChild(host);
-    bookDownloadRoot = root;
-    bookDownloadButton = root.querySelector("[data-book-action='download']");
-    bookDownloadStatus = root.querySelector(".book-status");
+    document.documentElement.appendChild(host)
+    bookDownloadRoot = root
+    bookDownloadButton = root.querySelector("[data-book-action='download']")
+    bookDownloadStatus = root.querySelector(".book-status")
     bookDownloadButton.addEventListener("click", () => {
-      startBookPdfDownload().catch(handleExtensionError);
-    });
-    return true;
+      startBookPdfDownload().catch(handleExtensionError)
+    })
+    return true
   }
 
   function bookDownloadCss() {
@@ -2367,87 +2367,87 @@
         .book-progress { width: 64px; min-width: 64px; padding: 0 4px; }
         .book-progress-track { right: 4px; left: 4px; }
       }
-    `;
+    `
   }
 
   function bindBookDownloadMessages() {
     chrome.runtime.onMessage.addListener((message) => {
-      if (message?.type !== "ou-yeah-book-progress") return;
-      if (activeBookDownloadJobId && message.jobId !== activeBookDownloadJobId) return;
+      if (message?.type !== "ou-yeah-book-progress") return
+      if (activeBookDownloadJobId && message.jobId !== activeBookDownloadJobId) return
 
-      activeBookDownloadJobId = message.jobId;
-      updateBookDownloadUi(message);
-    });
+      activeBookDownloadJobId = message.jobId
+      updateBookDownloadUi(message)
+    })
   }
 
   async function startBookPdfDownload() {
-    if (!bookDownloadButton || activeBookDownloadJobId) return;
+    if (!bookDownloadButton || activeBookDownloadJobId) return
 
-    const book = readBookConfig();
+    const book = readBookConfig()
     if (!book) {
       updateBookDownloadUi({
         status: "error",
         label: "Không đọc được cấu hình sách trên trang."
-      });
-      return;
+      })
+      return
     }
-    bookTotalPages = book.totalPages;
+    bookTotalPages = book.totalPages
 
     updateBookDownloadUi({
       status: "preparing",
       label: `Đang chuẩn bị ${book.totalPages} trang...`,
       percent: 0
-    });
+    })
 
     try {
       const response = await chrome.runtime.sendMessage({
         type: "ou-yeah-download-book-pdf",
         book,
         filename: `${book.title}.pdf`
-      });
+      })
 
       if (!response?.ok) {
-        throw new Error(response?.error || "Không thể bắt đầu tạo PDF.");
+        throw new Error(response?.error || "Không thể bắt đầu tạo PDF.")
       }
 
-      activeBookDownloadJobId = response.jobId;
+      activeBookDownloadJobId = response.jobId
     } catch (error) {
-      activeBookDownloadJobId = "";
-      updateBookDownloadUi({ status: "error", label: readableError(error) });
+      activeBookDownloadJobId = ""
+      updateBookDownloadUi({ status: "error", label: readableError(error) })
     }
   }
 
   function readBookConfig() {
     const pageImage = /** @type {HTMLImageElement | null} */ (
       document.querySelector("#dvContainer img[src*='page.ashx'], img[src*='/readonline/page.ashx']")
-    );
-    if (!pageImage) return null;
+    )
+    if (!pageImage) return null
 
-    let pageUrl;
+    let pageUrl
     try {
-      pageUrl = new URL(pageImage.getAttribute("src") || pageImage.src, location.href);
+      pageUrl = new URL(pageImage.getAttribute("src") || pageImage.src, location.href)
     } catch {
-      return null;
+      return null
     }
 
     const scriptText = Array.from(document.scripts)
       .map((script) => script.textContent || "")
-      .find((text) => text.includes("reader.setView(")) || "";
-    const totalMatch = /reader\.setView\(\s*[^,]+,\s*\d+,\s*\d+,\s*(\d+)/.exec(scriptText);
+      .find((text) => text.includes("reader.setView(")) || ""
+    const totalMatch = /reader\.setView\(\s*[^,]+,\s*\d+,\s*\d+,\s*(\d+)/.exec(scriptText)
 
-    const documentId = Number(pageUrl.searchParams.get("id"));
-    const totalPages = Number(totalMatch?.[1]);
-    const zoom = Number(pageUrl.searchParams.get("z"));
-    const signature = pageUrl.searchParams.get("sig") || "";
+    const documentId = Number(pageUrl.searchParams.get("id"))
+    const totalPages = Number(totalMatch?.[1])
+    const zoom = Number(pageUrl.searchParams.get("z"))
+    const signature = pageUrl.searchParams.get("sig") || ""
     const title = (document.getElementById("titleSach")?.textContent || document.title)
       .replace(/^Thư Quán OU\s*-\s*Đọc trực tuyến\s*-\s*/i, "")
       .replace(/\s+/g, " ")
-      .trim();
+      .trim()
 
-    if (!Number.isInteger(documentId) || documentId <= 0) return null;
-    if (!Number.isInteger(totalPages) || totalPages <= 0 || totalPages > 2000) return null;
-    if (!Number.isInteger(zoom) || zoom <= 0 || zoom > 20) return null;
-    if (!signature || signature.length > 256) return null;
+    if (!Number.isInteger(documentId) || documentId <= 0) return null
+    if (!Number.isInteger(totalPages) || totalPages <= 0 || totalPages > 2000) return null
+    if (!Number.isInteger(zoom) || zoom <= 0 || zoom > 20) return null
+    if (!signature || signature.length > 256) return null
 
     return {
       documentId,
@@ -2455,189 +2455,191 @@
       zoom,
       signature,
       title: title || `thu-quan-${documentId}`
-    };
+    }
   }
 
   function updateBookDownloadUi(message) {
-    if (!bookDownloadButton || !bookDownloadRoot || !bookDownloadStatus) return;
+    if (!bookDownloadButton || !bookDownloadRoot || !bookDownloadStatus) return
 
-    window.clearTimeout(bookStatusTimer);
-    const status = message.status || "downloading";
-    const isBusy = ["preparing", "downloading", "building"].includes(status);
+    window.clearTimeout(bookStatusTimer)
+    const status = message.status || "downloading"
+    const isBusy = ["preparing", "downloading", "building"].includes(status)
     const percent = Number.isFinite(Number(message.percent))
       ? Math.max(0, Math.min(100, Math.round(Number(message.percent))))
-      : 0;
-    const label = message.label || "Đang tạo PDF...";
-    const bookHud = bookDownloadRoot.querySelector(".book-hud");
+      : 0
+    const label = message.label || "Đang tạo PDF..."
+    const bookHud = bookDownloadRoot.querySelector(".book-hud")
     const visualPercent = status === "complete" || status === "error"
       ? 100
       : status === "preparing"
         ? Math.max(3, percent)
-        : percent;
+        : percent
 
-    bookDownloadButton.disabled = isBusy;
-    bookDownloadButton.dataset.busy = String(isBusy);
-    bookDownloadButton.dataset.status = status;
-    bookDownloadButton.title = label;
-    bookDownloadButton.setAttribute("aria-label", label);
-    bookHud.dataset.status = status;
-    bookHud.style.setProperty("--book-progress", `${visualPercent}%`);
-    bookDownloadStatus.textContent = status === "preparing" ? "Chuẩn bị" : `${percent}%`;
+    bookDownloadButton.disabled = isBusy
+    bookDownloadButton.dataset.busy = String(isBusy)
+    bookDownloadButton.dataset.status = status
+    bookDownloadButton.title = label
+    bookDownloadButton.setAttribute("aria-label", label)
+    bookHud.dataset.status = status
+    bookHud.style.setProperty("--book-progress", `${visualPercent}%`)
+    bookDownloadStatus.textContent = status === "preparing" ? "Chuẩn bị" : `${percent}%`
 
     if (status === "complete") {
-      activeBookDownloadJobId = "";
-      bookDownloadButton.querySelector(".book-action-icon").innerHTML = icon("check");
-      bookDownloadButton.querySelector(".book-action-label").textContent = "Đã tải";
-      bookStatusTimer = window.setTimeout(resetBookDownloadButton, 3500);
+      activeBookDownloadJobId = ""
+      bookDownloadButton.querySelector(".book-action-icon").innerHTML = icon("check")
+      bookDownloadButton.querySelector(".book-action-label").textContent = "Đã tải"
+      bookStatusTimer = window.setTimeout(resetBookDownloadButton, 3500)
     } else if (status === "error") {
-      activeBookDownloadJobId = "";
-      bookDownloadButton.querySelector(".book-action-icon").innerHTML = icon("warning");
-      bookDownloadButton.querySelector(".book-action-label").textContent = "Thử lại";
-      bookDownloadStatus.textContent = "Lỗi";
-      bookStatusTimer = window.setTimeout(resetBookDownloadButton, 5000);
+      activeBookDownloadJobId = ""
+      bookDownloadButton.querySelector(".book-action-icon").innerHTML = icon("warning")
+      bookDownloadButton.querySelector(".book-action-label").textContent = "Thử lại"
+      bookDownloadStatus.textContent = "Lỗi"
+      bookStatusTimer = window.setTimeout(resetBookDownloadButton, 5000)
     } else {
-      bookDownloadButton.querySelector(".book-action-icon").innerHTML = icon("loader");
+      bookDownloadButton.querySelector(".book-action-icon").innerHTML = icon("loader")
       bookDownloadButton.querySelector(".book-action-label").textContent = status === "building"
         ? "Tạo PDF"
-        : "Đang tải";
+        : "Đang tải"
     }
   }
 
   function resetBookDownloadButton() {
-    if (!bookDownloadButton || !bookDownloadRoot || !bookDownloadStatus) return;
-    bookDownloadButton.disabled = false;
-    bookDownloadButton.dataset.busy = "false";
-    bookDownloadButton.dataset.status = "idle";
-    bookDownloadButton.title = "Tải sách PDF";
-    bookDownloadButton.setAttribute("aria-label", "Tải sách PDF");
-    bookDownloadButton.querySelector(".book-action-icon").innerHTML = icon("download");
-    bookDownloadButton.querySelector(".book-action-label").textContent = "Tải PDF";
-    bookDownloadStatus.textContent = bookTotalPages ? `${bookTotalPages} trang` : "PDF";
-    const bookHud = bookDownloadRoot.querySelector(".book-hud");
-    bookHud.dataset.status = "idle";
-    bookHud.style.setProperty("--book-progress", "0%");
+    if (!bookDownloadButton || !bookDownloadRoot || !bookDownloadStatus) return
+    bookDownloadButton.disabled = false
+    bookDownloadButton.dataset.busy = "false"
+    bookDownloadButton.dataset.status = "idle"
+    bookDownloadButton.title = "Tải sách PDF"
+    bookDownloadButton.setAttribute("aria-label", "Tải sách PDF")
+    bookDownloadButton.querySelector(".book-action-icon").innerHTML = icon("download")
+    bookDownloadButton.querySelector(".book-action-label").textContent = "Tải PDF"
+    bookDownloadStatus.textContent = bookTotalPages ? `${bookTotalPages} trang` : "PDF"
+    const bookHud = bookDownloadRoot.querySelector(".book-hud")
+    bookHud.dataset.status = "idle"
+    bookHud.style.setProperty("--book-progress", "0%")
   }
 
   async function init() {
-    settings = { ...DEFAULT_SETTINGS, ...await loadSettings() };
-    settings.speed = clamp(Number(settings.speed) || 1, 0.25, 4);
+    settings = { ...DEFAULT_SETTINGS, ...await loadSettings() }
+    settings.speed = clamp(Number(settings.speed) || 1, 0.25, 4)
 
-    scanVideos();
-    observeVideoChanges();
-    bindRuntimeMessages();
+    if (IS_VIMEO) scheduleVimeoCandidateRegistration()
 
-    document.addEventListener("pointermove", handlePointerMove, true);
-    document.addEventListener("fullscreenchange", placeHudHost);
-    document.addEventListener("keydown", handleKeyboard, true);
-    document.addEventListener("scroll", scheduleHudPosition, true);
-    window.addEventListener("resize", scheduleHudPosition, { passive: true });
+    scanVideos()
+    observeVideoChanges()
+    bindRuntimeMessages()
+
+    document.addEventListener("pointermove", handlePointerMove, true)
+    document.addEventListener("fullscreenchange", placeHudHost)
+    document.addEventListener("keydown", handleKeyboard, true)
+    document.addEventListener("scroll", scheduleHudPosition, true)
+    window.addEventListener("resize", scheduleHudPosition, { passive: true })
 
     window.setInterval(() => {
-      scanVideos();
-      updateTimeUi();
-    }, 1000);
-    window.setInterval(syncHudWithPlayerControls, 180);
+      scanVideos()
+      updateTimeUi()
+    }, 1000)
+    window.setInterval(syncHudWithPlayerControls, 180)
   }
 
   function observeVideoChanges() {
     const observer = new MutationObserver(() => {
-      window.clearTimeout(scanTimer);
-      scanTimer = window.setTimeout(scanVideos, 160);
-    });
+      window.clearTimeout(scanTimer)
+      scanTimer = window.setTimeout(scanVideos, 160)
+    })
 
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
       attributeFilter: ["src"]
-    });
+    })
   }
 
   function bindRuntimeMessages() {
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type === "ou-yeah-toggle-panel" || message?.type === "ou-yeah-pulse-hud") {
-        scanVideos();
-        showHudFor(2200);
+        scanVideos()
+        showHudFor(2200)
       }
 
       if (message?.type === "ou-yeah-download-progress") {
-        if (activeDownloadJobId && message.jobId !== activeDownloadJobId) return;
-        updateDownloadUi(message);
+        if (activeDownloadJobId && message.jobId !== activeDownloadJobId) return
+        updateDownloadUi(message)
       }
-    });
+    })
 
     document.addEventListener("ou-yeah-pulse", () => {
-      scanVideos();
-      showHudFor(2200);
-    });
+      scanVideos()
+      showHudFor(2200)
+    })
   }
 
   function scanVideos() {
-    videos = Array.from(document.querySelectorAll("video")).filter((video) => video.isConnected);
-    videos.forEach(registerVideo);
-    activeVideo = chooseVideo();
-    applySpeedToVideos();
-    renderHud();
+    videos = Array.from(document.querySelectorAll("video")).filter((video) => video.isConnected)
+    videos.forEach(registerVideo)
+    activeVideo = chooseVideo()
+    applySpeedToVideos()
+    renderHud()
   }
 
   function registerVideo(video) {
-    if (registeredVideos.has(video)) return;
+    if (registeredVideos.has(video)) return
     registeredVideos.add(video);
 
     ["play", "pause", "loadedmetadata", "durationchange", "timeupdate"].forEach((eventName) => {
       video.addEventListener(eventName, () => {
-        activeVideo = video;
-        scheduleHudPosition();
-        updateTimeUi();
-      });
-    });
+        activeVideo = video
+        scheduleHudPosition()
+        updateTimeUi()
+      })
+    })
 
     video.addEventListener("ratechange", () => {
-      if (applyingRate) return;
-      settings.speed = clamp(video.playbackRate || settings.speed, 0.25, 4);
-      saveSettingsSoon();
-      updateSpeedUi();
-    });
+      if (applyingRate) return
+      settings.speed = clamp(video.playbackRate || settings.speed, 0.25, 4)
+      saveSettingsSoon()
+      updateSpeedUi()
+    })
   }
 
   function chooseVideo() {
-    if (activeVideo?.isConnected) return activeVideo;
+    if (activeVideo?.isConnected) return activeVideo
 
-    const playing = videos.find((video) => !video.paused && !video.ended);
-    if (playing) return playing;
+    const playing = videos.find((video) => !video.paused && !video.ended)
+    if (playing) return playing
 
     return videos
       .map((video) => ({ video, area: visibleArea(video) || video.clientWidth * video.clientHeight }))
-      .sort((a, b) => b.area - a.area)[0]?.video || null;
+      .sort((a, b) => b.area - a.area)[0]?.video || null
   }
 
   function renderHud() {
     if (!videos.length) {
       if (hud) {
         if (videoDownloadUiPinned) {
-          hud.host.hidden = false;
-          hud.host.classList.add("is-visible");
+          hud.host.hidden = false
+          hud.host.classList.add("is-visible")
         } else {
-          hud.host.hidden = true;
-          hud.host.classList.remove("is-visible", "menu-open");
+          hud.host.hidden = true
+          hud.host.classList.remove("is-visible", "menu-open")
         }
       }
-      return;
+      return
     }
 
-    if (!hud) createHud();
-    hud.host.hidden = false;
-    placeHudHost();
-    scheduleHudPosition();
-    updateSpeedUi();
-    updateTimeUi();
+    if (!hud) createHud()
+    hud.host.hidden = false
+    placeHudHost()
+    scheduleHudPosition()
+    updateSpeedUi()
+    updateTimeUi()
   }
 
   function createHud() {
-    const host = document.createElement("div");
-    host.id = HUD_ID;
+    const host = document.createElement("div")
+    host.id = HUD_ID
 
-    const root = host.attachShadow({ mode: "open" });
+    const root = host.attachShadow({ mode: "open" })
     root.innerHTML = `
       <style>${hudCss()}</style>
       <div class="hud" role="group" aria-label="Điều khiển nhanh video" data-download-status="idle">
@@ -2668,9 +2670,9 @@
         <span class="hud-time">--:--</span>
         <span class="toast" data-role="toast"></span>
       </div>
-    `;
+    `
 
-    document.documentElement.appendChild(host);
+    document.documentElement.appendChild(host)
     hud = {
       host,
       root,
@@ -2682,525 +2684,525 @@
       downloadProgress: root.querySelector('[data-role="download-progress"]'),
       downloadStatus: root.querySelector('[data-role="download-status"]'),
       toast: root.querySelector('[data-role="toast"]')
-    };
+    }
 
-    root.addEventListener("click", handleHudClick);
-    root.addEventListener("pointerenter", () => showHudFor(0));
-    root.addEventListener("pointerleave", () => scheduleHudHide(650));
+    root.addEventListener("click", handleHudClick)
+    root.addEventListener("pointerenter", () => showHudFor(0))
+    root.addEventListener("pointerleave", () => scheduleHudHide(650))
 
     document.addEventListener("pointerdown", (event) => {
-      if (!hud?.host || event.composedPath().includes(hud.host)) return;
-      closeSpeedMenu();
-    }, true);
+      if (!hud?.host || event.composedPath().includes(hud.host)) return
+      closeSpeedMenu()
+    }, true)
   }
 
   function handleHudClick(event) {
-    const speedOption = event.target.closest?.("[data-hud-speed]");
+    const speedOption = event.target.closest?.("[data-hud-speed]")
     if (speedOption) {
-      event.preventDefault();
-      event.stopPropagation();
-      setSpeed(Number(speedOption.dataset.hudSpeed), hud.speedButton);
-      closeSpeedMenu();
-      showHudFor(1600);
-      return;
+      event.preventDefault()
+      event.stopPropagation()
+      setSpeed(Number(speedOption.dataset.hudSpeed), hud.speedButton)
+      closeSpeedMenu()
+      showHudFor(1600)
+      return
     }
 
-    const button = event.target.closest?.("button[data-hud-action]");
-    if (!button) return;
+    const button = event.target.closest?.("button[data-hud-action]")
+    if (!button) return
 
-    event.preventDefault();
-    event.stopPropagation();
+    event.preventDefault()
+    event.stopPropagation()
 
-    const action = button.dataset.hudAction;
-    if (action !== "speed-menu") closeSpeedMenu();
-    if (action === "backward") seekBy(-SKIP_SECONDS, button);
-    if (action === "forward") seekBy(SKIP_SECONDS, button);
-    if (action === "speed-menu") toggleSpeedMenu();
-    if (action === "download") downloadVideo(button).catch(handleExtensionError);
+    const action = button.dataset.hudAction
+    if (action !== "speed-menu") closeSpeedMenu()
+    if (action === "backward") seekBy(-SKIP_SECONDS, button)
+    if (action === "forward") seekBy(SKIP_SECONDS, button)
+    if (action === "speed-menu") toggleSpeedMenu()
+    if (action === "download") downloadVideo(button).catch(handleExtensionError)
   }
 
   function setSpeed(value, toastAnchor = null) {
-    settings.speed = clamp(value, 0.25, 4);
-    saveSettingsSoon();
-    applySpeedToVideos();
-    updateSpeedUi();
-    showToast(formatSpeed(settings.speed), false, toastAnchor);
+    settings.speed = clamp(value, 0.25, 4)
+    saveSettingsSoon()
+    applySpeedToVideos()
+    updateSpeedUi()
+    showToast(formatSpeed(settings.speed), false, toastAnchor)
   }
 
   function cycleSpeed() {
-    const video = chooseVideo();
-    const current = video?.playbackRate || settings.speed;
-    const index = SPEEDS.findIndex((speed) => Math.abs(speed - current) < 0.03);
-    setSpeed(SPEEDS[index < 0 ? 0 : (index + 1) % SPEEDS.length]);
+    const video = chooseVideo()
+    const current = video?.playbackRate || settings.speed
+    const index = SPEEDS.findIndex((speed) => Math.abs(speed - current) < 0.03)
+    setSpeed(SPEEDS[index < 0 ? 0 : (index + 1) % SPEEDS.length])
   }
 
   function applySpeedToVideos() {
-    applyingRate = true;
+    applyingRate = true
     for (const video of videos) {
       try {
-        video.defaultPlaybackRate = settings.speed;
-        video.playbackRate = settings.speed;
+        video.defaultPlaybackRate = settings.speed
+        video.playbackRate = settings.speed
       } catch {
         // Player có thể khóa playbackRate trong vài khoảnh khắc khởi tạo.
       }
     }
 
     window.setTimeout(() => {
-      applyingRate = false;
-    }, 0);
+      applyingRate = false
+    }, 0)
   }
 
   function seekBy(delta, toastAnchor = null) {
-    const video = chooseVideo();
+    const video = chooseVideo()
     if (!video) {
-      showToast("Chưa thấy video", true, toastAnchor);
-      return;
+      showToast("Chưa thấy video", true, toastAnchor)
+      return
     }
 
-    const duration = Number.isFinite(video.duration) ? video.duration : Number.POSITIVE_INFINITY;
-    video.currentTime = clamp((video.currentTime || 0) + delta, 0, duration);
-    activeVideo = video;
-    updateTimeUi();
-    showToast(`${delta > 0 ? "+" : ""}${delta}s`, false, toastAnchor);
+    const duration = Number.isFinite(video.duration) ? video.duration : Number.POSITIVE_INFINITY
+    video.currentTime = clamp((video.currentTime || 0) + delta, 0, duration)
+    activeVideo = video
+    updateTimeUi()
+    showToast(`${delta > 0 ? "+" : ""}${delta}s`, false, toastAnchor)
   }
 
   function handleKeyboard(event) {
-    if (isTypingTarget(event.target)) return;
-    if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (isTypingTarget(event.target)) return
+    if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
 
     if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      seekBy(-SKIP_SECONDS);
+      event.preventDefault()
+      seekBy(-SKIP_SECONDS)
     } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      seekBy(SKIP_SECONDS);
+      event.preventDefault()
+      seekBy(SKIP_SECONDS)
     } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      cycleSpeed();
+      event.preventDefault()
+      cycleSpeed()
     }
   }
 
   function isTypingTarget(target) {
-    const tag = target?.tagName?.toLowerCase();
-    return tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
+    const tag = target?.tagName?.toLowerCase()
+    return tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable
   }
 
   function updateSpeedUi() {
-    if (!hud) return;
+    if (!hud) return
 
-    hud.speed.textContent = formatSpeed(settings.speed);
+    hud.speed.textContent = formatSpeed(settings.speed)
     hud.root.querySelectorAll("[data-hud-speed]").forEach((option) => {
-      option.classList.toggle("is-selected", Math.abs(Number(option.dataset.hudSpeed) - settings.speed) < 0.001);
-    });
+      option.classList.toggle("is-selected", Math.abs(Number(option.dataset.hudSpeed) - settings.speed) < 0.001)
+    })
   }
 
   function updateTimeUi() {
-    if (!hud) return;
+    if (!hud) return
 
-    const video = chooseVideo();
+    const video = chooseVideo()
     hud.root.querySelector(".hud-time").textContent = video
       ? `${formatTime(video.currentTime || 0)} / ${Number.isFinite(video.duration) ? formatTime(video.duration) : "--:--"}`
-      : "--:--";
-    scheduleHudPosition();
+      : "--:--"
+    scheduleHudPosition()
   }
 
   function handlePointerMove(event) {
-    const video = chooseVideo();
-    if (!video || !hud) return;
+    const video = chooseVideo()
+    if (!video || !hud) return
 
     if (document.fullscreenElement || pointInsideElement(event.clientX, event.clientY, video)) {
-      lastPointerInVideoAt = Date.now();
-      scheduleHudPosition();
+      lastPointerInVideoAt = Date.now()
+      scheduleHudPosition()
 
       if (!nativeControlsHidden) {
-        showHudFor(1800);
+        showHudFor(1800)
       }
     }
   }
 
   function pointInsideElement(x, y, element) {
-    const rect = element.getBoundingClientRect();
-    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    const rect = element.getBoundingClientRect()
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
   }
 
   function scheduleHudPosition() {
-    if (!hud?.host || hud.host.hidden || hudPositionFrame) return;
+    if (!hud?.host || hud.host.hidden || hudPositionFrame) return
 
     hudPositionFrame = window.requestAnimationFrame(() => {
-      hudPositionFrame = 0;
-      positionHud();
-    });
+      hudPositionFrame = 0
+      positionHud()
+    })
   }
 
   function positionHud() {
-    if (!hud?.host || hud.host.hidden || !hud.bar) return;
+    if (!hud?.host || hud.host.hidden || !hud.bar) return
 
-    const video = chooseVideo();
-    if (!video) return;
+    const video = chooseVideo()
+    if (!video) return
 
-    const videoRect = video.getBoundingClientRect();
-    const hudRect = hud.bar.getBoundingClientRect();
-    const hudWidth = hudRect.width || 370;
-    const hudHeight = hudRect.height || 50;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const margin = HUD_VIEWPORT_MARGIN;
-    const maxHudWidth = Math.max(220, Math.min(viewportWidth - margin * 2, videoRect.width - margin * 2));
+    const videoRect = video.getBoundingClientRect()
+    const hudRect = hud.bar.getBoundingClientRect()
+    const hudWidth = hudRect.width || 370
+    const hudHeight = hudRect.height || 50
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    const margin = HUD_VIEWPORT_MARGIN
+    const maxHudWidth = Math.max(220, Math.min(viewportWidth - margin * 2, videoRect.width - margin * 2))
 
-    hud.host.style.setProperty("--hud-max-width", `${Math.round(maxHudWidth)}px`);
+    hud.host.style.setProperty("--hud-max-width", `${Math.round(maxHudWidth)}px`)
 
     if (videoRect.width <= 0 || videoRect.height <= 0) {
-      placeHudInViewportCenter(hudWidth, hudHeight);
-      return;
+      placeHudInViewportCenter(hudWidth, hudHeight)
+      return
     }
 
-    const visibleLeft = clamp(videoRect.left, 0, viewportWidth);
-    const visibleRight = clamp(videoRect.right, 0, viewportWidth);
-    const visibleTop = clamp(videoRect.top, 0, viewportHeight);
-    const visibleBottom = clamp(videoRect.bottom, 0, viewportHeight);
-    const visibleWidth = visibleRight - visibleLeft;
-    const visibleHeight = visibleBottom - visibleTop;
+    const visibleLeft = clamp(videoRect.left, 0, viewportWidth)
+    const visibleRight = clamp(videoRect.right, 0, viewportWidth)
+    const visibleTop = clamp(videoRect.top, 0, viewportHeight)
+    const visibleBottom = clamp(videoRect.bottom, 0, viewportHeight)
+    const visibleWidth = visibleRight - visibleLeft
+    const visibleHeight = visibleBottom - visibleTop
 
     if (visibleWidth < 80 || visibleHeight < 36) {
-      placeHudInViewportCenter(hudWidth, hudHeight);
-      return;
+      placeHudInViewportCenter(hudWidth, hudHeight)
+      return
     }
 
-    const controlsOffset = 56;
-    const desiredBottom = visibleBottom - controlsOffset;
-    const minTop = Math.min(visibleTop + HUD_VIDEO_GAP, Math.max(margin, viewportHeight - hudHeight - margin));
-    const maxTop = Math.max(margin, viewportHeight - hudHeight - margin);
-    const top = clamp(desiredBottom - hudHeight, minTop, maxTop);
-    const fittedHudWidth = Math.min(hudWidth, viewportWidth - margin * 2);
-    const halfHud = fittedHudWidth / 2;
+    const controlsOffset = 56
+    const desiredBottom = visibleBottom - controlsOffset
+    const minTop = Math.min(visibleTop + HUD_VIDEO_GAP, Math.max(margin, viewportHeight - hudHeight - margin))
+    const maxTop = Math.max(margin, viewportHeight - hudHeight - margin)
+    const top = clamp(desiredBottom - hudHeight, minTop, maxTop)
+    const fittedHudWidth = Math.min(hudWidth, viewportWidth - margin * 2)
+    const halfHud = fittedHudWidth / 2
     const left = clamp(
       (visibleLeft + visibleRight) / 2,
       margin + halfHud,
       Math.max(margin + halfHud, viewportWidth - margin - halfHud)
-    );
+    )
 
-    hud.host.style.setProperty("--hud-left", `${Math.round(left)}px`);
-    hud.host.style.setProperty("--hud-top", `${Math.round(top)}px`);
+    hud.host.style.setProperty("--hud-left", `${Math.round(left)}px`)
+    hud.host.style.setProperty("--hud-top", `${Math.round(top)}px`)
   }
 
   function placeHudInViewportCenter(hudWidth, hudHeight) {
-    const margin = HUD_VIEWPORT_MARGIN;
-    const fittedHudWidth = Math.min(hudWidth, window.innerWidth - margin * 2);
-    const halfHud = fittedHudWidth / 2;
+    const margin = HUD_VIEWPORT_MARGIN
+    const fittedHudWidth = Math.min(hudWidth, window.innerWidth - margin * 2)
+    const halfHud = fittedHudWidth / 2
     const left = clamp(
       window.innerWidth / 2,
       margin + halfHud,
       Math.max(margin + halfHud, window.innerWidth - margin - halfHud)
-    );
-    const top = Math.max(margin, window.innerHeight - hudHeight - 18);
+    )
+    const top = Math.max(margin, window.innerHeight - hudHeight - 18)
 
-    hud.host.style.setProperty("--hud-left", `${Math.round(left)}px`);
-    hud.host.style.setProperty("--hud-top", `${Math.round(top)}px`);
+    hud.host.style.setProperty("--hud-left", `${Math.round(left)}px`)
+    hud.host.style.setProperty("--hud-top", `${Math.round(top)}px`)
   }
 
   function placeHudHost() {
-    if (!hud?.host) return;
+    if (!hud?.host) return
 
-    const fullscreenElement = document.fullscreenElement;
+    const fullscreenElement = document.fullscreenElement
     const canNestInFullscreen = fullscreenElement
       && fullscreenElement.nodeType === Node.ELEMENT_NODE
-      && fullscreenElement.tagName !== "VIDEO";
-    const target = canNestInFullscreen ? fullscreenElement : document.documentElement;
+      && fullscreenElement.tagName !== "VIDEO"
+    const target = canNestInFullscreen ? fullscreenElement : document.documentElement
 
     if (hud.host.parentElement !== target) {
-      target.appendChild(hud.host);
+      target.appendChild(hud.host)
     }
 
-    const wasFullscreen = hud.host.classList.contains("is-fullscreen");
-    const isFullscreen = Boolean(fullscreenElement);
-    hud.host.classList.toggle("is-fullscreen", isFullscreen);
-    scheduleHudPosition();
+    const wasFullscreen = hud.host.classList.contains("is-fullscreen")
+    const isFullscreen = Boolean(fullscreenElement)
+    hud.host.classList.toggle("is-fullscreen", isFullscreen)
+    scheduleHudPosition()
     
     if (isFullscreen && !wasFullscreen && !nativeControlsHidden) {
-      showHudFor(2200);
+      showHudFor(2200)
     }
   }
 
   function syncHudWithPlayerControls() {
-    if (!hud?.host || hud.host.hidden || hud.host.classList.contains("menu-open")) return;
+    if (!hud?.host || hud.host.hidden || hud.host.classList.contains("menu-open")) return
 
-    const nativeVisibility = getPlayerControlsVisibility();
+    const nativeVisibility = getPlayerControlsVisibility()
     if (nativeVisibility === true) {
-      nativeControlsHidden = false;
-      positionHud();
-      showHudFor(0);
-      return;
+      nativeControlsHidden = false
+      positionHud()
+      showHudFor(0)
+      return
     }
 
     if (nativeVisibility === false) {
-      nativeControlsHidden = true;
-      hideHud();
-      return;
+      nativeControlsHidden = true
+      hideHud()
+      return
     }
 
-    nativeControlsHidden = false;
+    nativeControlsHidden = false
     if (Date.now() - lastPointerInVideoAt > 1800) {
-      hideHud();
+      hideHud()
     }
   }
 
   function getPlayerControlsVisibility() {
-    const video = chooseVideo();
-    const videoRect = video?.getBoundingClientRect();
+    const video = chooseVideo()
+    const videoRect = video?.getBoundingClientRect()
     const candidates = getPlayerControlCandidates()
-      .filter((element) => isPotentialPlayerControls(element, videoRect));
+      .filter((element) => isPotentialPlayerControls(element, videoRect))
 
-    if (!candidates.length) return undefined;
-    if (candidates.some((element) => isLikelyPlayerControls(element, videoRect) && isElementVisible(element))) return true;
+    if (!candidates.length) return undefined
+    if (candidates.some((element) => isLikelyPlayerControls(element, videoRect) && isElementVisible(element))) return true
 
-    return false;
+    return false
   }
 
   function getPlayerControlCandidates() {
     const elements = PLAYER_CONTROL_SELECTORS
-      .flatMap((selector) => Array.from(document.querySelectorAll(selector)));
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
 
-    return Array.from(new Set(elements));
+    return Array.from(new Set(elements))
   }
 
   function isPotentialPlayerControls(element, videoRect) {
-    if (!element || element === hud?.host || hud?.host?.contains(element)) return false;
+    if (!element || element === hud?.host || hud?.host?.contains(element)) return false
 
-    const marker = `${element.className || ""} ${element.id || ""}`.toLowerCase();
-    if (marker.includes("ou-yeah") || marker.includes("elolms-video-tools")) return false;
-    if (!element.querySelector("button, [role='button'], input, progress, [aria-label]")) return false;
-    if (!videoRect) return true;
+    const marker = `${element.className || ""} ${element.id || ""}`.toLowerCase()
+    if (marker.includes("ou-yeah") || marker.includes("elolms-video-tools")) return false
+    if (!element.querySelector("button, [role='button'], input, progress, [aria-label]")) return false
+    if (!videoRect) return true
 
-    const rect = usableControlRect(element);
-    if (rect.width <= 0 || rect.height <= 0) return true;
+    const rect = usableControlRect(element)
+    if (rect.width <= 0 || rect.height <= 0) return true
 
     return rect.right > videoRect.left
       && rect.left < videoRect.right
       && rect.bottom > videoRect.top
-      && rect.top < videoRect.bottom + 120;
+      && rect.top < videoRect.bottom + 120
   }
 
   function usableControlRect(element) {
-    const rect = element.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) return rect;
+    const rect = element.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) return rect
 
-    const container = element.closest(".video-js, .vjs, .vp-player, .plyr, .mejs-container, .jwplayer, .flowplayer");
-    return container?.getBoundingClientRect() || rect;
+    const container = element.closest(".video-js, .vjs, .vp-player, .plyr, .mejs-container, .jwplayer, .flowplayer")
+    return container?.getBoundingClientRect() || rect
   }
 
   function isLikelyPlayerControls(element, videoRect) {
-    if (!element || element === hud?.host || hud?.host?.contains(element)) return false;
+    if (!element || element === hud?.host || hud?.host?.contains(element)) return false
 
-    const rect = element.getBoundingClientRect();
-    if (rect.width < 160 || rect.height < 18 || rect.height > 120) return false;
+    const rect = element.getBoundingClientRect()
+    if (rect.width < 160 || rect.height < 18 || rect.height > 120) return false
 
     if (videoRect) {
       const overlapsVideo = rect.right > videoRect.left
         && rect.left < videoRect.right
         && rect.bottom > videoRect.top
-        && rect.top < videoRect.bottom + 120;
-      const nearVideoBottom = rect.bottom >= videoRect.top + Math.min(80, videoRect.height * 0.25);
-      if (!overlapsVideo || !nearVideoBottom) return false;
+        && rect.top < videoRect.bottom + 120
+      const nearVideoBottom = rect.bottom >= videoRect.top + Math.min(80, videoRect.height * 0.25)
+      if (!overlapsVideo || !nearVideoBottom) return false
     } else if (rect.bottom < window.innerHeight * 0.58) {
-      return false;
+      return false
     }
 
-    const marker = `${element.className || ""} ${element.id || ""}`.toLowerCase();
-    if (marker.includes("ou-yeah") || marker.includes("elolms-video-tools")) return false;
-    if (/\b(hidden|inactive|fade-out|faded|transparent)\b/.test(marker)) return false;
+    const marker = `${element.className || ""} ${element.id || ""}`.toLowerCase()
+    if (marker.includes("ou-yeah") || marker.includes("elolms-video-tools")) return false
+    if (/\b(hidden|inactive|fade-out|faded|transparent)\b/.test(marker)) return false
 
-    return element.querySelector("button, [role='button'], input, progress, [aria-label]") != null;
+    return element.querySelector("button, [role='button'], input, progress, [aria-label]") != null
   }
 
   function isElementVisible(element) {
-    const rect = element.getBoundingClientRect();
+    const rect = element.getBoundingClientRect()
 
-    if (element.closest("[aria-hidden='true'], [hidden]")) return false;
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false;
+    if (element.closest("[aria-hidden='true'], [hidden]")) return false
+    if (rect.width <= 0 || rect.height <= 0) return false
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false
 
     for (let current = element; current?.nodeType === Node.ELEMENT_NODE; current = current.parentElement) {
-      const style = getComputedStyle(current);
-      const opacity = Number.parseFloat(style.opacity || "1");
+      const style = getComputedStyle(current)
+      const opacity = Number.parseFloat(style.opacity || "1")
 
-      if (style.display === "none" || style.visibility === "hidden" || opacity < 0.05) return false;
-      if (current === element && style.pointerEvents === "none") return false;
+      if (style.display === "none" || style.visibility === "hidden" || opacity < 0.05) return false
+      if (current === element && style.pointerEvents === "none") return false
     }
 
-    return true;
+    return true
   }
 
   function showHudFor(duration = 1700) {
-    if (!hud?.host || hud.host.hidden) return;
+    if (!hud?.host || hud.host.hidden) return
 
-    positionHud();
-    hud.host.classList.add("is-visible");
-    window.clearTimeout(hudVisibleTimer);
+    positionHud()
+    hud.host.classList.add("is-visible")
+    window.clearTimeout(hudVisibleTimer)
 
     if (duration > 0 && !videoDownloadUiPinned && !hud.host.classList.contains("menu-open")) {
-      hudVisibleTimer = window.setTimeout(hideHud, duration);
+      hudVisibleTimer = window.setTimeout(hideHud, duration)
     }
   }
 
   function scheduleHudHide(delay = 900) {
-    if (!hud?.host || videoDownloadUiPinned || hud.host.classList.contains("menu-open")) return;
-    window.clearTimeout(hudVisibleTimer);
-    hudVisibleTimer = window.setTimeout(hideHud, delay);
+    if (!hud?.host || videoDownloadUiPinned || hud.host.classList.contains("menu-open")) return
+    window.clearTimeout(hudVisibleTimer)
+    hudVisibleTimer = window.setTimeout(hideHud, delay)
   }
 
   function hideHud() {
-    if (!hud?.host || videoDownloadUiPinned || hud.host.classList.contains("menu-open")) return;
-    if (hud.host.matches(":hover")) return;
-    hud.host.classList.remove("is-visible");
-    const focused = hud.root.activeElement;
-    if (focused) focused.blur();
+    if (!hud?.host || videoDownloadUiPinned || hud.host.classList.contains("menu-open")) return
+    if (hud.host.matches(":hover")) return
+    hud.host.classList.remove("is-visible")
+    const focused = hud.root.activeElement
+    if (focused) focused.blur()
   }
 
   function toggleSpeedMenu() {
-    if (!hud?.host) return;
+    if (!hud?.host) return
 
-    const willOpen = !hud.host.classList.contains("menu-open");
-    hud.host.classList.toggle("menu-open", willOpen);
-    hud.speedButton?.setAttribute("aria-expanded", String(willOpen));
-    showHudFor(0);
+    const willOpen = !hud.host.classList.contains("menu-open")
+    hud.host.classList.toggle("menu-open", willOpen)
+    hud.speedButton?.setAttribute("aria-expanded", String(willOpen))
+    showHudFor(0)
   }
 
   function closeSpeedMenu() {
-    if (!hud?.host) return;
+    if (!hud?.host) return
 
-    hud.host.classList.remove("menu-open");
-    hud.speedButton?.setAttribute("aria-expanded", "false");
-    scheduleHudHide(900);
+    hud.host.classList.remove("menu-open")
+    hud.speedButton?.setAttribute("aria-expanded", "false")
+    scheduleHudHide(900)
   }
 
   function showToast(text, isError = false, anchor = null, persistent = false) {
-    if (!hud) return;
+    if (!hud) return
 
-    showHudFor(persistent ? 0 : 1300);
-    hud.toast.textContent = text;
-    hud.toast.classList.toggle("is-error", Boolean(isError));
-    positionToast(anchor);
-    hud.toast.classList.add("is-visible");
+    showHudFor(persistent ? 0 : 1300)
+    hud.toast.textContent = text
+    hud.toast.classList.toggle("is-error", Boolean(isError))
+    positionToast(anchor)
+    hud.toast.classList.add("is-visible")
 
-    window.clearTimeout(toastTimer);
+    window.clearTimeout(toastTimer)
     if (!persistent) {
       toastTimer = window.setTimeout(() => {
-        hud.toast.classList.remove("is-visible");
-      }, 900);
+        hud.toast.classList.remove("is-visible")
+      }, 900)
     }
   }
 
   function pinVideoDownloadUi(anchor = null) {
-    videoDownloadUiPinned = true;
-    downloadToastAnchor = anchor;
-    window.clearTimeout(hudVisibleTimer);
-    window.clearTimeout(toastTimer);
-    window.clearTimeout(videoProgressResetTimer);
-    showHudFor(0);
+    videoDownloadUiPinned = true
+    downloadToastAnchor = anchor
+    window.clearTimeout(hudVisibleTimer)
+    window.clearTimeout(toastTimer)
+    window.clearTimeout(videoProgressResetTimer)
+    showHudFor(0)
   }
 
   function releaseVideoDownloadUi() {
-    videoDownloadUiPinned = false;
-    activeDownloadJobId = "";
-    downloadToastAnchor = null;
-    window.clearTimeout(videoProgressResetTimer);
-    videoProgressResetTimer = window.setTimeout(resetVideoDownloadProgress, 1600);
-    scheduleHudHide(1600);
+    videoDownloadUiPinned = false
+    activeDownloadJobId = ""
+    downloadToastAnchor = null
+    window.clearTimeout(videoProgressResetTimer)
+    videoProgressResetTimer = window.setTimeout(resetVideoDownloadProgress, 1600)
+    scheduleHudHide(1600)
   }
 
   function updateVideoDownloadProgress(message) {
-    if (!hud?.bar || !hud.downloadButton || !hud.downloadIcon || !hud.downloadProgress || !hud.downloadStatus) return;
+    if (!hud?.bar || !hud.downloadButton || !hud.downloadIcon || !hud.downloadProgress || !hud.downloadStatus) return
 
-    const status = message.status || "downloading";
-    const isBusy = ["preparing", "downloading", "building"].includes(status);
+    const status = message.status || "downloading"
+    const isBusy = ["preparing", "downloading", "building"].includes(status)
     const percent = Number.isFinite(Number(message.percent))
       ? clamp(Math.round(Number(message.percent)), 0, 100)
-      : 0;
+      : 0
     const visualPercent = status === "complete" || status === "error"
       ? 100
       : status === "preparing"
         ? Math.max(3, percent)
-        : percent;
-    const label = message.label || (isBusy ? "Đang tải video..." : "Tải video");
+        : percent
+    const label = message.label || (isBusy ? "Đang tải video..." : "Tải video")
 
-    hud.bar.dataset.downloadStatus = status;
-    hud.bar.style.setProperty("--video-download-progress", `${visualPercent}%`);
-    hud.downloadProgress.setAttribute("aria-valuenow", String(percent));
-    hud.downloadProgress.setAttribute("aria-valuetext", label);
-    hud.downloadProgress.setAttribute("aria-hidden", String(status === "idle"));
+    hud.bar.dataset.downloadStatus = status
+    hud.bar.style.setProperty("--video-download-progress", `${visualPercent}%`)
+    hud.downloadProgress.setAttribute("aria-valuenow", String(percent))
+    hud.downloadProgress.setAttribute("aria-valuetext", label)
+    hud.downloadProgress.setAttribute("aria-hidden", String(status === "idle"))
     hud.downloadStatus.textContent = status === "preparing"
       ? "Chuẩn bị"
       : status === "error"
         ? "Lỗi"
-        : `${percent}%`;
-    hud.downloadButton.disabled = isBusy;
-    hud.downloadButton.dataset.busy = String(isBusy);
-    hud.downloadButton.title = label;
-    hud.downloadButton.setAttribute("aria-label", label);
+        : `${percent}%`
+    hud.downloadButton.disabled = isBusy
+    hud.downloadButton.dataset.busy = String(isBusy)
+    hud.downloadButton.title = label
+    hud.downloadButton.setAttribute("aria-label", label)
     hud.downloadIcon.innerHTML = status === "complete"
       ? icon("check")
       : status === "error"
         ? icon("warning")
         : isBusy
           ? icon("loader")
-          : icon("download");
+          : icon("download")
   }
 
   function resetVideoDownloadProgress() {
-    updateVideoDownloadProgress({ status: "idle", percent: 0, label: "Tải video" });
+    updateVideoDownloadProgress({ status: "idle", percent: 0, label: "Tải video" })
   }
 
   function hideToast() {
-    if (!hud?.toast) return;
-    window.clearTimeout(toastTimer);
-    hud.toast.classList.remove("is-visible");
+    if (!hud?.toast) return
+    window.clearTimeout(toastTimer)
+    hud.toast.classList.remove("is-visible")
   }
 
   function positionToast(anchor) {
-    if (!hud?.bar || !hud.toast) return;
+    if (!hud?.bar || !hud.toast) return
 
-    const barRect = hud.bar.getBoundingClientRect();
-    let left = barRect.width / 2;
+    const barRect = hud.bar.getBoundingClientRect()
+    let left = barRect.width / 2
 
     if (anchor?.isConnected) {
-      const anchorRect = anchor.getBoundingClientRect();
-      left = (anchorRect.left + anchorRect.right) / 2 - barRect.left;
+      const anchorRect = anchor.getBoundingClientRect()
+      left = (anchorRect.left + anchorRect.right) / 2 - barRect.left
     }
 
-    const toastWidth = hud.toast.getBoundingClientRect().width;
-    const edge = Math.min(8 + toastWidth / 2, barRect.width / 2);
-    left = clamp(left, edge, Math.max(edge, barRect.width - edge));
-    hud.toast.style.setProperty("--toast-left", `${Math.round(left)}px`);
+    const toastWidth = hud.toast.getBoundingClientRect().width
+    const edge = Math.min(8 + toastWidth / 2, barRect.width / 2)
+    left = clamp(left, edge, Math.max(edge, barRect.width - edge))
+    hud.toast.style.setProperty("--toast-left", `${Math.round(left)}px`)
   }
 
   async function downloadVideo(toastAnchor = null) {
     if (videoDownloadUiPinned) {
-      showToast("Đang tải video...", false, downloadToastAnchor, true);
-      return;
+      showToast("Đang tải video...", false, downloadToastAnchor, true)
+      return
     }
 
-    const video = chooseVideo();
+    const video = chooseVideo()
     if (!video) {
-      showToast("Chưa thấy video", true, toastAnchor);
-      return;
+      showToast("Chưa thấy video", true, toastAnchor)
+      return
     }
 
-    pinVideoDownloadUi(toastAnchor);
-    updateVideoDownloadProgress({ status: "preparing", percent: 0, label: "Đang tìm link video..." });
-    showToast("Đang tìm link...", false, toastAnchor, true);
+    pinVideoDownloadUi(toastAnchor)
+    updateVideoDownloadProgress({ status: "preparing", percent: 0, label: "Đang tìm link video..." })
+    showToast("Đang tìm link...", false, toastAnchor, true)
 
     try {
-      const candidates = await collectCandidates(video);
-      const chosen = chooseDownloadCandidate(candidates);
+      const candidates = await collectCandidates(video)
+      const chosen = chooseDownloadCandidate(candidates)
 
       if (!chosen) {
         const message = candidates.some((candidate) => candidate.isDash)
           ? "Chưa hỗ trợ DASH"
-          : "Chưa bắt được link";
-        updateVideoDownloadProgress({ status: "error", percent: 0, label: message });
-        showToast(message, true, toastAnchor);
-        releaseVideoDownloadUi();
-        return;
+          : "Chưa bắt được link"
+        updateVideoDownloadProgress({ status: "error", percent: 0, label: message })
+        showToast(message, true, toastAnchor)
+        releaseVideoDownloadUi()
+        return
       }
 
       const response = await sendRuntimeMessage({
@@ -3208,145 +3210,171 @@
         url: chosen.url,
         filename: buildFilename(chosen.url, chosen.quality),
         pageTitle: document.title
-      });
+      })
 
       if (!response?.ok) {
-        const message = response?.error || "Không tải được";
-        updateVideoDownloadProgress({ status: "error", percent: 0, label: message });
-        showToast(message, true, toastAnchor);
-        releaseVideoDownloadUi();
-        return;
+        const message = response?.error || "Không tải được"
+        updateVideoDownloadProgress({ status: "error", percent: 0, label: message })
+        showToast(message, true, toastAnchor)
+        releaseVideoDownloadUi()
+        return
       }
 
       if (response.mode === "hls") {
-        activeDownloadJobId = response.jobId;
-        hideToast();
+        activeDownloadJobId = response.jobId
+        hideToast()
       } else {
-        updateVideoDownloadProgress({ status: "complete", percent: 100, label: "Đã gửi video sang Downloads." });
-        showToast("Đã gửi tải", false, toastAnchor);
-        releaseVideoDownloadUi();
+        updateVideoDownloadProgress({ status: "complete", percent: 100, label: "Đã gửi video sang Downloads." })
+        showToast("Đã gửi tải", false, toastAnchor)
+        releaseVideoDownloadUi()
       }
     } catch (error) {
-      const message = readableError(error);
-      updateVideoDownloadProgress({ status: "error", percent: 0, label: message });
-      showToast(message, true, toastAnchor);
-      releaseVideoDownloadUi();
+      const message = readableError(error)
+      updateVideoDownloadProgress({ status: "error", percent: 0, label: message })
+      showToast(message, true, toastAnchor)
+      releaseVideoDownloadUi()
     }
   }
 
   async function collectCandidates(video) {
-    const candidates = [];
-    addCandidate(candidates, video.currentSrc, "video hiện tại", 120, true);
-    addCandidate(candidates, video.src, "video.src", 115, true);
+    const candidates = []
+    addCandidate(candidates, video.currentSrc, "video hiện tại", 120, true)
+    addCandidate(candidates, video.src, "video.src", 115, true)
 
     video.querySelectorAll("source[src]").forEach((source) => {
-      addCandidate(candidates, source.getAttribute("src"), "source", 110, true);
-    });
+      addCandidate(candidates, source.getAttribute("src"), "source", 110, true)
+    })
 
     document.querySelectorAll("video[src], source[src], a[href]").forEach((element) => {
-      addCandidate(candidates, element.getAttribute("src") || element.getAttribute("href"), element.tagName.toLowerCase(), 60, false);
-    });
+      addCandidate(candidates, element.getAttribute("src") || element.getAttribute("href"), element.tagName.toLowerCase(), 60, false)
+    })
 
     try {
       performance.getEntriesByType("resource").forEach((entry) => {
-        addCandidate(candidates, entry.name, "network", 70, false);
-      });
+        addCandidate(candidates, entry.name, "network", 70, false)
+      })
     } catch {
       // Một vài iframe chặn performance entries.
     }
 
     if (IS_VIMEO) {
-      await collectVimeoCandidates(candidates);
+      await collectVimeoCandidates(candidates)
     }
 
-    const background = await sendRuntimeMessage({ type: "ou-yeah-get-media-candidates" }).catch(() => null);
-    (background?.candidates || []).forEach((candidate, index) => {
-      addCandidate(candidates, candidate.url, candidate.source || "network", 90 - index, false);
-    });
+    const background = await sendRuntimeMessage({ type: "ou-yeah-get-media-candidates" }).catch(() => null)
+    background?.candidates?.forEach((candidate, index) => {
+      addCandidate(candidates, candidate.url, candidate.source || "network", 90 - index, false)
+    })
 
-    return dedupeCandidates(candidates);
+    return dedupeCandidates(candidates)
   }
 
   async function collectVimeoCandidates(candidates) {
-    const id = /\/video\/(\d+)/.exec(location.pathname)?.[1];
-    if (!id) return;
+    const id = /\/video\/(\d+)/.exec(location.pathname)?.[1]
+    if (!id) return
 
-    const embeddedConfig = readEmbeddedVimeoConfig(document);
+    const embeddedConfig = readEmbeddedVimeoConfig(document)
     if (embeddedConfig) {
-      addVimeoConfigCandidates(candidates, embeddedConfig);
-      if (candidates.some((candidate) => candidate.source.startsWith("vimeo"))) return;
+      addVimeoConfigCandidates(candidates, embeddedConfig)
+      if (candidates.some((candidate) => candidate.source.startsWith("vimeo"))) return
     }
 
-    const hash = new URL(location.href).searchParams.get("h");
-    const configUrl = new URL(`https://player.vimeo.com/video/${id}/config`);
-    if (hash) configUrl.searchParams.set("h", hash);
-    const response = await fetch(configUrl, { credentials: "include", cache: "no-store" });
-    if (!response.ok) return;
+    const hash = new URL(location.href).searchParams.get("h")
+    const configUrl = new URL(`https://player.vimeo.com/video/${id}/config`)
+    if (hash) configUrl.searchParams.set("h", hash)
+    const response = await fetch(configUrl, { credentials: "include", cache: "no-store" })
+    if (!response.ok) return
 
-    const config = await response.json();
-    addVimeoConfigCandidates(candidates, config);
+    const config = await response.json()
+    addVimeoConfigCandidates(candidates, config)
+  }
+
+  function scheduleVimeoCandidateRegistration() {
+    [0, 700, 2200].forEach((delay) => {
+      window.setTimeout(() => {
+        registerVimeoMediaCandidates().catch(() => {})
+      }, delay)
+    })
+  }
+
+  async function registerVimeoMediaCandidates() {
+    const candidates = []
+    await collectVimeoCandidates(candidates)
+    const reported = dedupeCandidates(candidates)
+      .filter((candidate) => candidate.isKnownMedia)
+      .slice(0, 24)
+      .map((candidate) => ({
+        url: candidate.url,
+        source: candidate.source
+      }))
+    if (!reported.length) return
+
+    await sendRuntimeMessage({
+      type: "ou-yeah-register-media-candidates",
+      candidates: reported
+    })
   }
 
   function addVimeoConfigCandidates(candidates, config) {
-    const progressive = config?.request?.files?.progressive || [];
+    const progressive = config?.request?.files?.progressive || []
     progressive.forEach((file) => {
-      const quality = Number.parseInt(file.quality, 10) || 0;
-      addCandidate(candidates, file.url, `vimeo ${file.quality || ""}`, 180 + quality, true, file.quality);
-    });
+      const quality = Number.parseInt(file.quality, 10) || 0
+      addCandidate(candidates, file.url, `vimeo ${file.quality || ""}`, 180 + quality, true, file.quality)
+    })
 
-    const hls = config?.request?.files?.hls;
-    const defaultCdn = hls?.default_cdn;
+    const hls = config?.request?.files?.hls
+    const defaultCdn = hls?.default_cdn
     if (defaultCdn && hls?.cdns?.[defaultCdn]?.url) {
-      addCandidate(candidates, hls.cdns[defaultCdn].url, "vimeo hls", 150, true);
+      addCandidate(candidates, hls.cdns[defaultCdn].url, "vimeo hls", 150, true)
     }
     Object.values(hls?.cdns || {}).forEach((cdn) => {
-      addCandidate(candidates, cdn?.url, "vimeo hls", 140, true);
-    });
+      addCandidate(candidates, cdn?.url, "vimeo hls", 140, true)
+    })
   }
 
   function readEmbeddedVimeoConfig(page) {
     for (const script of page.scripts) {
-      const payload = jsonAssignmentPayload(script.textContent || "", "window.playerConfig");
-      if (!payload) continue;
+      const payload = jsonAssignmentPayload(script.textContent || "", "window.playerConfig")
+      if (!payload) continue
       try {
-        return JSON.parse(payload);
+        return JSON.parse(payload)
       } catch {
         // Continue in case another inline script contains a valid assignment.
       }
     }
-    return null;
+    return null
   }
 
   function jsonAssignmentPayload(source, variableName) {
-    const markerIndex = source.indexOf(variableName);
-    if (markerIndex < 0) return "";
-    const start = source.indexOf("{", markerIndex + variableName.length);
-    if (start < 0) return "";
+    const markerIndex = source.indexOf(variableName)
+    if (markerIndex < 0) return ""
+    const start = source.indexOf("{", markerIndex + variableName.length)
+    if (start < 0) return ""
 
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
+    let depth = 0
+    let inString = false
+    let escaped = false
     for (let index = start; index < source.length; index += 1) {
-      const character = source[index];
+      const character = source[index]
       if (inString) {
-        if (escaped) escaped = false;
-        else if (character === "\\") escaped = true;
-        else if (character === '"') inString = false;
-        continue;
+        if (escaped) escaped = false
+        else if (character === "\\") escaped = true
+        else if (character === '"') inString = false
+        continue
       }
-      if (character === '"') inString = true;
-      else if (character === "{") depth += 1;
-      else if (character === "}" && --depth === 0) return source.slice(start, index + 1);
+      if (character === '"') inString = true
+      else if (character === "{") depth += 1
+      else if (character === "}" && --depth === 0) return source.slice(start, index + 1)
     }
-    return "";
+    return ""
   }
 
   function addCandidate(candidates, rawUrl, source, weight, allowUnknown, quality = "") {
-    const url = normalizeMediaUrl(rawUrl);
-    if (!url || url.startsWith("blob:")) return;
+    const url = normalizeMediaUrl(rawUrl)
+    if (!url || url.startsWith("blob:")) return
 
-    const isKnownMedia = MEDIA_URL_RE.test(url);
-    if (!allowUnknown && !isKnownMedia) return;
+    const isKnownMedia = MEDIA_URL_RE.test(url)
+    if (!allowUnknown && !isKnownMedia) return
 
     candidates.push({
       url,
@@ -3356,81 +3384,81 @@
       isHls: HLS_URL_RE.test(url),
       isDash: DASH_URL_RE.test(url),
       isKnownMedia
-    });
+    })
   }
 
   function chooseDownloadCandidate(candidates) {
     return candidates
       .filter((candidate) => !candidate.isDash)
-      .sort((a, b) => scoreCandidate(b) - scoreCandidate(a))[0] || null;
+      .sort((a, b) => scoreCandidate(b) - scoreCandidate(a))[0] || null
   }
 
   function scoreCandidate(candidate) {
-    let score = candidate.weight || 0;
-    if (/\.(mp4|m4v|webm)(?:[?#]|$)/i.test(candidate.url)) score += 40;
-    if (candidate.isHls) score += 12;
-    if (/vimeo/i.test(candidate.source)) score += 28;
-    if (/pluginfile\.php|draftfile\.php/i.test(candidate.url)) score += 25;
-    return score;
+    let score = candidate.weight || 0
+    if (/\.(mp4|m4v|webm)(?:[?#]|$)/i.test(candidate.url)) score += 40
+    if (candidate.isHls) score += 12
+    if (/vimeo/i.test(candidate.source)) score += 28
+    if (/pluginfile\.php|draftfile\.php/i.test(candidate.url)) score += 25
+    return score
   }
 
   function dedupeCandidates(candidates) {
-    const byUrl = new Map();
+    const byUrl = new Map()
     for (const candidate of candidates) {
-      const current = byUrl.get(candidate.url);
+      const current = byUrl.get(candidate.url)
       if (!current || scoreCandidate(candidate) > scoreCandidate(current)) {
-        byUrl.set(candidate.url, candidate);
+        byUrl.set(candidate.url, candidate)
       }
     }
-    return Array.from(byUrl.values());
+    return Array.from(byUrl.values())
   }
 
   function normalizeMediaUrl(rawUrl) {
-    if (!rawUrl || typeof rawUrl !== "string") return "";
+    if (!rawUrl || typeof rawUrl !== "string") return ""
     try {
-      const parsed = new URL(rawUrl, document.baseURI);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
-      return parsed.href;
+      const parsed = new URL(rawUrl, document.baseURI)
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return ""
+      return parsed.href
     } catch {
-      return "";
+      return ""
     }
   }
 
   function updateDownloadUi(message) {
     if (message.status === "complete") {
-      updateVideoDownloadProgress({ ...message, percent: 100 });
-      showToast("Đã gửi tải", false, downloadToastAnchor);
-      releaseVideoDownloadUi();
-      return;
+      updateVideoDownloadProgress({ ...message, percent: 100 })
+      showToast("Đã gửi tải", false, downloadToastAnchor)
+      releaseVideoDownloadUi()
+      return
     }
 
     if (message.status === "error") {
-      updateVideoDownloadProgress(message);
-      showToast(message.label || "Lỗi tải", true, downloadToastAnchor);
-      releaseVideoDownloadUi();
-      return;
+      updateVideoDownloadProgress(message)
+      showToast(message.label || "Lỗi tải", true, downloadToastAnchor)
+      releaseVideoDownloadUi()
+      return
     }
 
-    if (!videoDownloadUiPinned) pinVideoDownloadUi(downloadToastAnchor);
-    updateVideoDownloadProgress(message);
-    hideToast();
+    if (!videoDownloadUiPinned) pinVideoDownloadUi(downloadToastAnchor)
+    updateVideoDownloadProgress(message)
+    hideToast()
   }
 
   function buildFilename(url, quality = "") {
-    const title = sanitizeFilePart(document.title || "ou-yeah-video");
-    const qualityPart = quality ? ` ${sanitizeFilePart(quality)}` : "";
-    const extension = HLS_URL_RE.test(url) ? ".ts" : extensionFromUrl(url) || ".mp4";
-    return `${title}${qualityPart}${extension}`;
+    const title = sanitizeFilePart(document.title || "ou-yeah-video")
+    const qualityPart = quality ? ` ${sanitizeFilePart(quality)}` : ""
+    const extension = HLS_URL_RE.test(url) ? ".ts" : extensionFromUrl(url) || ".mp4"
+    return `${title}${qualityPart}${extension}`
   }
 
   function extensionFromUrl(url) {
     try {
-      const match = /\.([a-z0-9]{2,5})$/i.exec(new URL(url).pathname);
-      if (!match) return "";
-      const extension = `.${match[1].toLowerCase()}`;
-      return extension === ".m3u8" || extension === ".mpd" ? "" : extension;
+      const match = /\.([a-z0-9]{2,5})$/i.exec(new URL(url).pathname)
+      if (!match) return ""
+      const extension = `.${match[1].toLowerCase()}`
+      return extension === ".m3u8" || extension === ".mpd" ? "" : extension
     } catch {
-      return "";
+      return ""
     }
   }
 
@@ -3439,139 +3467,139 @@
       .replace(/[\\/:*?"<>|]+/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 140) || "ou-yeah-video";
+      .slice(0, 140) || "ou-yeah-video"
   }
 
   function loadSettings() {
     return new Promise((resolve) => {
       if (!isExtensionContextAvailable()) {
-        resolve({});
-        return;
+        resolve({})
+        return
       }
 
       try {
         chrome.storage.sync.get([STORAGE_KEY, LEGACY_STORAGE_KEY], (result) => {
           try {
             if (chrome.runtime.lastError) {
-              resolve({});
-              return;
+              resolve({})
+              return
             }
           } catch {
-            resolve({});
-            return;
+            resolve({})
+            return
           }
-          const currentSettings = result?.[STORAGE_KEY];
-          const legacySettings = result?.[LEGACY_STORAGE_KEY];
-          const storedSettings = currentSettings || legacySettings || {};
+          const currentSettings = result?.[STORAGE_KEY]
+          const legacySettings = result?.[LEGACY_STORAGE_KEY]
+          const storedSettings = currentSettings || legacySettings || {}
 
           if (!currentSettings && legacySettings) {
             try {
               chrome.storage.sync.set({ [STORAGE_KEY]: legacySettings }, () => {
                 try {
-                  void chrome.runtime.lastError;
+                  void chrome.runtime.lastError
                 } catch {
                   // Migration is best-effort when an old context is being replaced.
                 }
-              });
+              })
             } catch {
               // The legacy settings remain readable if migration cannot be saved yet.
             }
           }
 
-          resolve(storedSettings);
-        });
+          resolve(storedSettings)
+        })
       } catch {
-        resolve({});
+        resolve({})
       }
-    });
+    })
   }
 
   function saveSettingsSoon() {
-    window.clearTimeout(saveTimer);
+    window.clearTimeout(saveTimer)
     saveTimer = window.setTimeout(() => {
-      if (!isExtensionContextAvailable()) return;
+      if (!isExtensionContextAvailable()) return
 
       try {
         chrome.storage.sync.set({ [STORAGE_KEY]: settings }, () => {
           try {
-            void chrome.runtime.lastError;
+            void chrome.runtime.lastError
           } catch {
             // Context cũ sau khi extension Reload: không còn gì cần lưu.
           }
-        });
+        })
       } catch {
         // Storage chỉ để nhớ cấu hình giữa các lần học.
       }
-    }, 160);
+    }, 160)
   }
 
   function sendRuntimeMessage(message) {
     return new Promise((resolve, reject) => {
       if (!isExtensionContextAvailable()) {
-        reject(new Error("Extension context invalidated."));
-        return;
+        reject(new Error("Extension context invalidated."))
+        return
       }
 
       try {
         chrome.runtime.sendMessage(message, (response) => {
-          const error = chrome.runtime.lastError;
-          if (error) reject(new Error(error.message));
-          else resolve(response);
-        });
+          const error = chrome.runtime.lastError
+          if (error) reject(new Error(error.message))
+          else resolve(response)
+        })
       } catch (error) {
-        reject(error);
+        reject(error)
       }
-    });
+    })
   }
 
   function visibleArea(element) {
-    const rect = element.getBoundingClientRect();
-    const width = Math.max(0, Math.min(rect.right, innerWidth) - Math.max(rect.left, 0));
-    const height = Math.max(0, Math.min(rect.bottom, innerHeight) - Math.max(rect.top, 0));
-    return width * height;
+    const rect = element.getBoundingClientRect()
+    const width = Math.max(0, Math.min(rect.right, innerWidth) - Math.max(rect.left, 0))
+    const height = Math.max(0, Math.min(rect.bottom, innerHeight) - Math.max(rect.top, 0))
+    return width * height
   }
 
   function formatSpeed(value) {
-    return `${Number(Number(value).toFixed(2)).toString()}x`;
+    return `${Number(Number(value).toFixed(2)).toString()}x`
   }
 
   function formatTime(seconds) {
-    const safe = Math.max(0, Math.floor(Number(seconds) || 0));
-    const hours = Math.floor(safe / 3600);
-    const minutes = Math.floor((safe % 3600) / 60);
-    const secs = safe % 60;
-    if (hours) return `${hours}:${pad(minutes)}:${pad(secs)}`;
-    return `${minutes}:${pad(secs)}`;
+    const safe = Math.max(0, Math.floor(Number(seconds) || 0))
+    const hours = Math.floor(safe / 3600)
+    const minutes = Math.floor((safe % 3600) / 60)
+    const secs = safe % 60
+    if (hours) return `${hours}:${pad(minutes)}:${pad(secs)}`
+    return `${minutes}:${pad(secs)}`
   }
 
   function pad(value) {
-    return String(value).padStart(2, "0");
+    return String(value).padStart(2, "0")
   }
 
   function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
+    return Math.min(max, Math.max(min, value))
   }
 
   function readableError(error) {
-    if (error instanceof Error) return error.message;
-    return String(error || "Đã có lỗi xảy ra.");
+    if (error instanceof Error) return error.message
+    return String(error || "Đã có lỗi xảy ra.")
   }
 
   function isExtensionContextAvailable() {
     try {
-      return Boolean(chrome?.runtime?.id && chrome.runtime.getURL(""));
+      return Boolean(chrome?.runtime?.id && chrome.runtime.getURL(""))
     } catch {
-      return false;
+      return false
     }
   }
 
   function handleExtensionError(error) {
-    if (/extension context invalidated/i.test(readableError(error))) return;
-    console.error(`${APP}:`, error);
+    if (/extension context invalidated/i.test(readableError(error))) return
+    console.error(`${APP}:`, error)
   }
 
   function toolLogo() {
-    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m.527,1.839L1.846.52C2.414-.048,3.293-.164,3.989.238l3.832,2.211c.733.423,1.185,1.205,1.185,2.051v3.086l4.726,4.726c1.115-.525,2.482-.339,3.404.58l5.889,5.872c1.111,1.108,1.325,2.916.329,4.129-1.145,1.395-3.212,1.472-4.458.229l-6.01-5.993c-.926-.923-1.109-2.295-.574-3.409L7.592,9h-3.086c-.846,0-1.629-.452-2.051-1.185L.245,3.982C-.156,3.286-.041,2.407.527,1.839Zm10.479,2.661v2.258l3.315,3.314c1.524-.212,3.104.283,4.227,1.403l2.208,2.202c1.887-1.319,3.164-3.478,3.249-5.881.028-.794-.065-1.569-.279-2.317-.131-.457-1.126-1.18-1.946-.36l-3.316,3.316c-.787.787-2.074.764-2.853-.036-.799-.779-.824-2.067-.037-2.854l3.316-3.316c.82-.82.097-1.815-.36-1.946-.748-.214-1.523-.308-2.317-.279-2.211.079-4.213,1.168-5.547,2.811.22.526.34,1.097.34,1.684Zm-.938,9.804-2.293-2.293L.859,18.906c-1.162,1.163-1.155,3.059-.007,4.231,1.172,1.149,3.068,1.156,4.231-.006l5.615-5.599c-.568-.974-.792-2.113-.63-3.228Z"/></svg>`;
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m.527,1.839L1.846.52C2.414-.048,3.293-.164,3.989.238l3.832,2.211c.733.423,1.185,1.205,1.185,2.051v3.086l4.726,4.726c1.115-.525,2.482-.339,3.404.58l5.889,5.872c1.111,1.108,1.325,2.916.329,4.129-1.145,1.395-3.212,1.472-4.458.229l-6.01-5.993c-.926-.923-1.109-2.295-.574-3.409L7.592,9h-3.086c-.846,0-1.629-.452-2.051-1.185L.245,3.982C-.156,3.286-.041,2.407.527,1.839Zm10.479,2.661v2.258l3.315,3.314c1.524-.212,3.104.283,4.227,1.403l2.208,2.202c1.887-1.319,3.164-3.478,3.249-5.881.028-.794-.065-1.569-.279-2.317-.131-.457-1.126-1.18-1.946-.36l-3.316,3.316c-.787.787-2.074.764-2.853-.036-.799-.779-.824-2.067-.037-2.854l3.316-3.316c.82-.82.097-1.815-.36-1.946-.748-.214-1.523-.308-2.317-.279-2.211.079-4.213,1.168-5.547,2.811.22.526.34,1.097.34,1.684Zm-.938,9.804-2.293-2.293L.859,18.906c-1.162,1.163-1.155,3.059-.007,4.231,1.172,1.149,3.068,1.156,4.231-.006l5.615-5.599c-.568-.974-.792-2.113-.63-3.228Z"/></svg>`
   }
 
   function icon(name) {
@@ -3583,33 +3611,33 @@
       loader: assetIcon("loading.svg"),
       check: assetIcon("check-circle.svg"),
       warning: assetIcon("exclamation.svg")
-    };
-    return icons[name] || "";
+    }
+    return icons[name] || ""
   }
 
   function assetIcon(filename, className = "") {
-    if (!isExtensionContextAvailable()) return "";
+    if (!isExtensionContextAvailable()) return ""
 
-    let url;
+    let url
     try {
-      url = chrome.runtime.getURL(`src/icons/${filename}`);
+      url = chrome.runtime.getURL(`src/icons/${filename}`)
     } catch {
-      return "";
+      return ""
     }
-    return `<span class="asset-icon ${className}" style="--asset-icon: url('${url}')" aria-hidden="true"></span>`;
+    return `<span class="asset-icon ${className}" style="--asset-icon: url('${url}')" aria-hidden="true"></span>`
   }
 
   function spaceGroteskFontFaces() {
-    if (!isExtensionContextAvailable()) return "";
+    if (!isExtensionContextAvailable()) return ""
 
-    const fontUrl = (filename) => chrome.runtime.getURL(`src/fonts/${filename}`);
+    const fontUrl = (filename) => chrome.runtime.getURL(`src/fonts/${filename}`)
     return `
       @font-face { font-family: "Space Grotesk"; src: url("${fontUrl("SpaceGrotesk-Light.ttf")}") format("truetype"); font-style: normal; font-weight: 300; font-display: swap; }
       @font-face { font-family: "Space Grotesk"; src: url("${fontUrl("SpaceGrotesk-Regular.ttf")}") format("truetype"); font-style: normal; font-weight: 400; font-display: swap; }
       @font-face { font-family: "Space Grotesk"; src: url("${fontUrl("SpaceGrotesk-Medium.ttf")}") format("truetype"); font-style: normal; font-weight: 500; font-display: swap; }
       @font-face { font-family: "Space Grotesk"; src: url("${fontUrl("SpaceGrotesk-SemiBold.ttf")}") format("truetype"); font-style: normal; font-weight: 600; font-display: swap; }
       @font-face { font-family: "Space Grotesk"; src: url("${fontUrl("SpaceGrotesk-Bold.ttf")}") format("truetype"); font-style: normal; font-weight: 700; font-display: swap; }
-    `;
+    `
   }
 
   function hudCss() {
@@ -4047,6 +4075,6 @@
         background: rgba(18,20,24,0.97);
         box-shadow: 0 10px 30px rgba(0,0,0,0.48);
       }
-    `;
+    `
   }
-})();
+})()

@@ -1,10 +1,10 @@
 {
   "name": "ou-yeah",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint src/**/*.js",
+    "lint": "eslint src/**/*.js test/extension-context.test.mjs",
     "typecheck": "tsc --project jsconfig.json",
     "test": "node --test",
     "check": "npm run lint && npm run typecheck && npm test",

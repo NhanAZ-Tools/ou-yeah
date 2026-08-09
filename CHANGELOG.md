@@ -1,6 +1,12 @@
 # Changelog
 
-## Chưa phát hành
+## 2.3.0 - 2026-08-10
+
+- Thêm `Course Data Export` để gom dữ liệu khóa học thành ZIP AI-ready: tổng quan/đề cương, nội dung, diễn đàn và tệp đính kèm, bài tập, quiz đã làm được phép xem lại, lịch trình `.ics`, điểm cá nhân cùng hai nguồn tùy chọn là thành viên và thông báo tài khoản.
+- Bổ sung `course-context.md`, `course-index.json`, `access-report.json`, diagnostics, cây tệp và snapshot diff giữa các lần xuất; tách Video/Slide/Script sang hàng đợi tải học liệu hiện có để tránh giới hạn bộ nhớ Chrome.
+- Thêm cổng xác nhận dữ liệu nhạy cảm, giới hạn trường thành viên, trạng thái bài nộp/điểm chỉ của tài khoản hiện tại, cùng tiến trình tạm dừng/tiếp tục/hủy/chạy lại và cảnh báo khi rời trang.
+- Giữ manifest của `Tải toàn bộ` không bị các lần tải theo chương ghi đè; lỗi học liệu cũng được đưa vào `access-report.json` và diagnostics của gói dữ liệu.
+- Sửa trạng thái tạm dừng của hàng đợi học liệu để gói `Tải toàn bộ` không đóng khi còn thiếu tệp; sửa nhận diện đáp án/ảnh quiz và phân loại entity tải lỗi trong báo cáo truy cập.
 
 ## 2.2.1 - 2026-08-03
 

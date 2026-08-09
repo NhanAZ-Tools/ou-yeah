@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="vi" data-ou-yeah-course-data-fixture="true">
+<head>
+  <meta charset="utf-8">
+  <title>Khóa: Kiểm thử OU Yeah! | ELOLMS</title>
+  <style>body{font-family:Arial,sans-serif}.course-content{max-width:900px;margin:40px auto}.activity{padding:8px}.sectionname{font-weight:700}</style>
+</head>
+<body>
+  <header><h1>Khóa học kiểm thử - 2531</h1><h6>TEST0001-2531</h6></header>
+  <div role="progressbar" aria-valuenow="87"></div>
+  <main class="course-content">
+    <section class="course-section">
+      <div class="course-section-header"><h3 class="sectionname">CHƯƠNG 1: KIỂM THỬ XUẤT DỮ LIỆU</h3></div>
+      <div class="activity modtype_label" id="module-100"><span class="activityname"><span class="instancename">Chuẩn đầu ra Chương</span></span><div class="description">Nội dung chuẩn đầu ra dành cho AI.</div></div>
+      <div class="activity modtype_page" id="module-104"><span class="activityname"><a href="/mod/page/view.php?id=104"><span class="instancename">Tài liệu hướng dẫn ôn tập</span></a></span></div>
+      <div class="activity modtype_forum" id="module-101"><span class="activityname"><a href="/mod/forum/view.php?id=101"><span class="instancename">Video Conference 1</span></a></span></div>
+      <div class="activity modtype_assign" id="module-102"><span class="activityname"><a href="/mod/assign/view.php?id=102"><span class="instancename">Bài tập Nhóm</span></a></span></div>
+      <div class="activity modtype_quiz" id="module-103"><span class="activityname"><a href="/mod/quiz/view.php?id=103"><span class="instancename">Bài kiểm tra kết thúc Chương 1</span></a></span></div>
+      <div class="activity modtype_page" id="module-105"><span class="activityname"><a href="/mod/page/view.php?id=105"><span class="instancename">[Tải về] Slide Chương 1</span></a></span></div>
+    </section>
+  </main>
+  <div id="ou-yeah-course-download-root" data-mode="session" aria-hidden="true"></div>
+  <script>
+    (() => {
+      const encoder = new TextEncoder();
+      const html = (body) => new Response(`<!doctype html><html><head><title>Fixture</title></head><body><main id="region-main">${body}</main></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } });
+      const route = (url) => {
+        if (url.pathname.endsWith("/coursesummary.php")) return html('<a href="/viewfile.php?doc=outline&id=1925">Đề cương</a><a href="/viewfile.php?doc=schedule&id=1925">Lịch trình</a>');
+        if (url.pathname.endsWith("/viewfile.php")) {
+          const type = url.searchParams.get("doc") === "outline" ? "1" : "2";
+          return html(`<iframe src="https://portal.elo.edu.vn/viewpdf/${type}/1925"></iframe>`);
+        }
+        if (url.pathname.endsWith("/mod/page/view.php")) return html('<h2>Tài liệu hướng dẫn ôn tập</h2><p>Nội dung trang học tập.</p><img src="/pluginfile.php/sample.png" alt="Ảnh minh họa">');
+        if (url.pathname.endsWith("/pluginfile.php/sample.png")) return new Response(new Uint8Array([137,80,78,71,13,10,26,10]), { headers: { "content-type": "image/png" } });
+        if (url.pathname.endsWith("/pluginfile.php/assignment.pdf")) return new Response(encoder.encode("%PDF-fixture"), { headers: { "content-type": "application/pdf" } });
+        if (url.pathname.endsWith("/mod/assign/view.php")) return html('<h2>Bài tập Nhóm</h2><p>Trạng thái nộp bài: Đã nộp</p><table><tr><th>Trạng thái</th><th>Lần sửa cuối</th></tr><tr><td>Đã nộp</td><td>03/08/2026 12:00</td></tr></table><a href="/pluginfile.php/assignment.pdf">Bài nộp.pdf</a>');
+        if (url.pathname.endsWith("/mod/quiz/view.php")) return html('<a href="/mod/quiz/review.php?attempt=9001&cmid=103">Xem lại</a>');
+        if (url.pathname.endsWith("/mod/quiz/review.php")) return html('<div class="que correct"><div class="qtext">Quiz fixture question</div><div class="answer"><div class="r0 correct"><span class="answernumber">a.</span><span class="flex-fill">Wrong option</span></div><div class="r1"><span class="answernumber">b.</span><span class="flex-fill">Right option</span></div></div><div class="rightanswer">&#272;&#225;p &#225;n &#273;&#250;ng: b</div></div>');
+        if (url.pathname.endsWith("/learningschedule.php")) return html('<table><tr><th>Lịch học</th></tr><tr><td data-day-timestamp="1785603600"><ul><li data-region="event-item" data-event-component="mod_forum" data-event-eventtype="expectcompletionon"><a data-event-id="106612" href="/mod/forum/view.php?id=101" title="Video Conference 1">19:00 Video Conference 1</a></li></ul></td></tr></table>');
+        if (url.pathname.endsWith("/grade/report/index.php")) return html('<table><tr><th>Hạng mục</th><th>Điểm</th></tr><tr><td>Bài tập</td><td>9,0</td></tr></table><a href="/user/view.php?id=42">Người dùng kiểm thử</a>');
+        if (url.pathname.endsWith("/user/index.php")) return html('<nav class="pagination"><a href="/user/index.php?id=fixture&tifirst=A">A</a><a href="/user/index.php?id=fixture&page=1">2</a></nav><table><tbody><tr><td><a href="/user/view.php?id=42">Nguyễn Văn A</a></td><td>Học viên</td><td>Nhóm 1</td><td>1 giờ</td></tr></tbody></table>');
+        if (url.pathname.endsWith("/notifications.php")) return html('<div data-region="notification"><a href="/mod/forum/discuss.php?d=1">Thông báo lịch học mới</a></div>');
+        return html('<p>Trang fixture mặc định.</p>');
+      };
+
+      window.fetch = async (input) => route(new URL(typeof input === "string" ? input : input.url, location.href));
+      window.confirm = () => true;
+      window.OUYeahForumExportApi = {
+        collectBundle: async () => ({
+          exported: { topicCount: 1, postCount: 2 },
+          files: [
+            { name: "forum.json", data: encoder.encode('{"topicCount":1,"postCount":2}') },
+            { name: "forum.md", data: encoder.encode("# Video Conference 1\n\nNội dung thảo luận.") },
+            { name: "attachments/minh-hoa.txt", data: encoder.encode("fixture") }
+          ]
+        })
+      };
+      window.__courseDataSummary = null;
+      window.OUYeahCourseDownloadApi = {
+        isBusy: () => false,
+        dismissPanel: () => true,
+        setCourseDataSummary: (summary) => {
+          window.__courseDataSummary = summary;
+          const root = document.getElementById("ou-yeah-course-download-root") || document.createElement("div");
+          root.id = "ou-yeah-course-download-root";
+          root.dataset.mode = "session";
+          root.textContent = `${summary.status}: ${summary.message}`;
+          if (!root.parentElement) document.body.appendChild(root);
+          return true;
+        },
+        setCourseDataPanel: (summary) => {
+          const root = document.getElementById("ou-yeah-course-download-root") || document.createElement("div");
+          root.id = "ou-yeah-course-download-root";
+          root.dataset.mode = "course-data";
+          root.textContent = `${summary.title}: ${summary.message}`;
+          if (!root.parentElement) document.body.appendChild(root);
+          return true;
+        },
+        clearCourseDataPanel: () => {
+          document.getElementById("ou-yeah-course-download-root")?.remove();
+          return true;
+        },
+        downloadAllMaterials: async () => ({ status: "complete", downloaded: 0, failed: 1, resources: [{ id: "page-105", activityId: "105", type: "slide", title: "[Tải về] Slide Chương 1", downloadStatus: "failed", error: "FILE_TRANSIENT_ERROR" }] })
+      };
+
+      let pendingBlob = null;
+      URL.createObjectURL = (blob) => {
+        pendingBlob = blob;
+        return "blob:ou-yeah-runtime-fixture";
+      };
+      URL.revokeObjectURL = () => {};
+      HTMLAnchorElement.prototype.click = function () {
+        if (!this.download || !pendingBlob) return;
+        const filename = this.download;
+        pendingBlob.arrayBuffer().then((buffer) => {
+          const bytes = new Uint8Array(buffer);
+          const view = new DataView(buffer);
+          const names = [];
+          const payloads = {};
+          const inspected = new Set(["course-index.json", "access-report.json", "00-course/schedule/calendar.ics", "06-people/participants.json", "snapshots/changes.json"]);
+          let offset = 0;
+          while (offset + 30 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
+            const size = view.getUint32(offset + 18, true);
+            const nameLength = view.getUint16(offset + 26, true);
+            const extraLength = view.getUint16(offset + 28, true);
+            const name = new TextDecoder().decode(bytes.slice(offset + 30, offset + 30 + nameLength));
+            names.push(name);
+            const dataStart = offset + 30 + nameLength + extraLength;
+            if (inspected.has(name) || name.endsWith("/quiz-bank.json")) payloads[name] = new TextDecoder().decode(bytes.slice(dataStart, dataStart + size));
+            offset += 30 + nameLength + extraLength + size;
+          }
+          document.body.dataset.ouExportStatus = "complete";
+          document.body.dataset.ouExportFilename = filename;
+          document.body.dataset.ouExportEntries = JSON.stringify(names);
+          document.body.dataset.ouExportPayloads = JSON.stringify(payloads);
+          document.body.dataset.ouExportSize = String(bytes.length);
+        });
+      };
+    })();
+  </script>
+  <script src="../../src/course-data-export.js"></script>
+</body>
+</html>
