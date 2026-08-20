@@ -477,6 +477,22 @@ test("background compacts long course paths without losing the file extension", 
   assert.ok(result.length <= 180, `path length was ${result.length}`)
   assert.match(result, /\.mp4$/)
   assert.ok(result.startsWith("OU Yeah!/"))
+
+  const fullNames = vm.runInContext(`sanitizeDownloadPath([
+    "OU Yeah!",
+    "Lập trình hướng đối tượng - 2531",
+    "00-AI",
+    "01-content",
+    "CHƯƠNG 1 - TỔNG QUAN LẬP TRÌNH HƯỚNG ĐỐI TƯỢNG",
+    "Chủ đề 1.2 - Các đặc điểm của lập trình hướng đối tượng",
+    "21-Hoạt động 21",
+    "activity.json"
+  ].join("/"))`, context)
+  assert.ok(fullNames.length <= 180, `full-name path length was ${fullNames.length}`)
+  assert.match(fullNames, /^OU Yeah!\/Lập trình hướng đối tượng - 2531\//)
+  assert.match(fullNames, /CHƯƠNG 1 - TỔNG QUAN LẬP TRÌNH HƯỚNG ĐỐI TƯỢNG/)
+  assert.match(fullNames, /Chủ đề 1\.2 - Các đặc điểm của lập trình hướng đối tượng/)
+  assert.doesNotMatch(vm.runInContext(`sanitizeDownloadPath("OU Yeah!/Course/CON/..")`, context), /\/CON\//i)
 })
 
 test("notification wheel fallback scrolls the document before Moodle handlers", async () => {
@@ -942,6 +958,8 @@ test("course downloader scopes unlocked Video, Slide and Script resources into a
   assert.match(background, /isVimeoSender/)
   assert.match(source, /compactPathSegments\(segments, 180\)/)
   assert.match(source, /function compactSectionDirectory\(title\)/)
+  assert.match(source, /function compactSectionDirectory\(title\)\s*\{\s*return sanitizeSegment\(title, 120\)/)
+  assert.match(source, /sanitizeSegment\(course\.title, 120\)/)
   assert.match(source, /const sectionDirectories = new Map\(\)/)
   assert.doesNotMatch(source, /return `\$\{segment\.slice\(0, available\)\.trimEnd\(\)\}…\$\{extension\}`/)
   assert.match(source, /failedResourcesMarkup/)
@@ -1000,6 +1018,7 @@ test("course data exporter writes one access-aware AI tree beside the full-cours
   assert.match(source, /ou-yeah-course-data-groups\{align-items:stretch\}/)
   assert.match(source, /const DISPLAY_GROUPS = GROUPS\.reduce/)
   assert.match(source, /DISPLAY_GROUPS\.map/)
+  assert.match(source, /return `OU Yeah!\/\$\{sanitizeSegment\(course\.title, 120\)\}`/)
   assert.match(source, /max-height:none/)
   assert.doesNotMatch(source, /ou-yeah-course-data-warning/)
   assert.doesNotMatch(source, /data-ou-data-sensitive-consent/)

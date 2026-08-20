@@ -1546,7 +1546,7 @@ Do not infer content that is locked, missing or marked as failed.
   }
 
   function renderReaderGuide(context) {
-    const courseFolder = sanitizeSegment(context.course.title, 24)
+    const courseFolder = sanitizeSegment(context.course.title, 120)
     return `# OU Yeah! Course AI Tree\n\nThis folder contains two reading modes for **${context.course.title}** without requiring an archive.\n\n## For AI agents\n\n1. Read the parent \`../AGENTS.md\`.\n2. Start with \`course-context.md\`.\n3. Use \`course-index.json\` to locate entities and relationships.\n4. Check \`access-report.json\` before treating missing content as unavailable.\n5. Use \`01-content/materials-download.json\` to resolve Script files only. Do not open or add Video or Slide files to AI context.\n\n## For human readers\n\nOpen the sibling material tree under:\n\n\`Downloads/OU Yeah!/${courseFolder}/\`\n\nVideo, Slide and Script files are kept there in the chapter/topic/part folders for human viewing. The \`localPath\` values in \`01-content/materials-download.json\` point to those files, but AI agents must read Script only.\n\n## Privacy\n\nReview the files before sharing them. They can contain course content, personal submissions, grades or participant data when those scopes were explicitly selected.\n`
   }
 
@@ -1775,7 +1775,7 @@ Do not infer content that is locked, missing or marked as failed.
   }
 
   function courseDownloadFolder(course) {
-    return `OU Yeah!/${sanitizeSegment(course.title, 24)}`
+    return `OU Yeah!/${sanitizeSegment(course.title, 120)}`
   }
 
   function ensureRoot() {

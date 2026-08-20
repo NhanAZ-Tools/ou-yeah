@@ -827,7 +827,7 @@
           let directory = base
           let suffix = 2
           while (used.has(directory.toLowerCase())) {
-            directory = compactPathSegment(`${base} (${suffix})`, 22)
+            directory = sanitizeSegment(`${base} (${suffix})`, 120)
             suffix += 1
           }
           used.add(directory.toLowerCase())
@@ -840,7 +840,7 @@
         pathKeys.push(key)
       })
       const relativeDirectory = directoryParts.filter(Boolean).join("/")
-      const downloadDirectory = [COURSE_ROOT_FOLDER, sanitizeSegment(course.title, 24), relativeDirectory].filter(Boolean).join("/")
+      const downloadDirectory = [COURSE_ROOT_FOLDER, sanitizeSegment(course.title, 120), relativeDirectory].filter(Boolean).join("/")
       const baseTitle = sanitizeSegment(resource.title, 60)
       const key = `${downloadDirectory}/${baseTitle}`.toLowerCase()
       const count = (duplicates.get(key) || 0) + 1
@@ -871,22 +871,38 @@
   function compactPathSegments(segments, maxLength) {
     const compacted = segments.map((segment) => String(segment))
     let joined = compacted.join("/")
-    if (joined.length > maxLength) {
-      const leafIndex = compacted.length - 1
+    if (joined.length <= maxLength) return compacted
+
+    const leafIndex = compacted.length - 1
+    const leafExcess = joined.length - maxLength
+    compacted[leafIndex] = truncatePathSegment(
+      compacted[leafIndex],
+      Math.max(1, compacted[leafIndex].length - leafExcess),
+      true
+    )
+    joined = compacted.join("/")
+
+    while (joined.length > maxLength) {
+      const directoryIndexes = compacted
+        .slice(2, -1)
+        .map((segment, offset) => ({ index: offset + 2, length: segment.length }))
+        .filter((entry) => entry.length > 10)
+        .sort((a, b) => b.index - a.index || b.length - a.length)
+      const target = directoryIndexes[0]
+      if (!target) break
       const excess = joined.length - maxLength
-      compacted[leafIndex] = truncatePathSegment(
-        compacted[leafIndex],
-        Math.max(16, compacted[leafIndex].length - excess),
-        true
+      compacted[target.index] = truncatePathSegment(
+        compacted[target.index],
+        Math.max(1, compacted[target.index].length - excess),
+        false
       )
+      joined = compacted.join("/")
     }
     return compacted
   }
 
   function compactSectionDirectory(title) {
-    const cleaned = sanitizeSegment(title, 22)
-    const numbered = /^(CHƯƠNG|Chủ đề|Phần)\s+[^-–—]+/i.exec(cleaned)?.[0]?.trim()
-    return compactPathSegment(numbered || cleaned, 22)
+    return sanitizeSegment(title, 120)
   }
 
   function compactPathSegment(segment, maxLength) {
@@ -930,7 +946,7 @@
     const manifestFilename = session.manifestFilename
       ? sanitizeSegment(session.manifestFilename, 120)
       : `ou-yeah-course-manifest-${sanitizeSegment(session.scopeTitle || "hoc-lieu", 72)}.json`
-    const filename = `${COURSE_ROOT_FOLDER}/${sanitizeSegment(session.course.title, 24)}/${manifestFilename}`
+    const filename = `${COURSE_ROOT_FOLDER}/${sanitizeSegment(session.course.title, 120)}/${manifestFilename}`
     const response = await sendRuntimeMessage({
       type: "ou-yeah-download-course-manifest",
       filename,

@@ -1,5 +1,10 @@
 # Changelog
 
+## Chưa phát hành
+
+- Sửa lỗi `Invalid filename` khi xuất cây dữ liệu AI bằng cách chuẩn hóa ký tự điều khiển/tên thiết bị Windows và rút gọn tên file sâu nhất khi đường dẫn quá dài.
+- Giữ đầy đủ tên khóa học, chương và chủ đề trong cây học liệu; không còn cắt tên khóa học ở 24 ký tự hoặc bỏ phần tiêu đề sau dấu `:`.
+
 ## 2.3.0 - 2026-08-10
 
 - Thêm `Course Data Export` để gom dữ liệu khóa học thành ZIP AI-ready: tổng quan/đề cương, nội dung, diễn đàn và tệp đính kèm, bài tập, quiz đã làm được phép xem lại, lịch trình `.ics`, điểm cá nhân cùng hai nguồn tùy chọn là thành viên và thông báo tài khoản.

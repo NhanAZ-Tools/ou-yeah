@@ -804,31 +804,32 @@ function sanitizeDownloadPath(filename) {
 function compactDownloadPath(segments, maxLength) {
   const compacted = segments.map((segment) => String(segment))
   let joined = compacted.join("/")
+  if (joined.length <= maxLength) return compacted.join("/")
+
+  const leafIndex = compacted.length - 1
+  const leafExcess = joined.length - maxLength
+  compacted[leafIndex] = truncateDownloadSegment(
+    compacted[leafIndex],
+    Math.max(1, compacted[leafIndex].length - leafExcess),
+    true
+  )
+  joined = compacted.join("/")
+
   while (joined.length > maxLength) {
     const directoryIndexes = compacted
-      .slice(1, -1)
-      .map((segment, offset) => ({ index: offset + 1, length: segment.length }))
+      .slice(2, -1)
+      .map((segment, offset) => ({ index: offset + 2, length: segment.length }))
       .filter((entry) => entry.length > 10)
-      .sort((a, b) => b.length - a.length)
+      .sort((a, b) => b.index - a.index || b.length - a.length)
     const target = directoryIndexes[0]
     if (!target) break
     const excess = joined.length - maxLength
     compacted[target.index] = truncateDownloadSegment(
       compacted[target.index],
-      Math.max(10, compacted[target.index].length - excess),
+      Math.max(1, compacted[target.index].length - excess),
       false
     )
     joined = compacted.join("/")
-  }
-
-  if (joined.length > maxLength && compacted.length) {
-    const leafIndex = compacted.length - 1
-    const excess = joined.length - maxLength
-    compacted[leafIndex] = truncateDownloadSegment(
-      compacted[leafIndex],
-      Math.max(16, compacted[leafIndex].length - excess),
-      true
-    )
   }
   return compacted.join("/")
 }
@@ -841,12 +842,17 @@ function truncateDownloadSegment(segment, maxLength, preserveExtension) {
 }
 
 function sanitizePathSegment(segment) {
-  return String(segment || "")
+  const safeValue = Array.from(String(segment || ""))
+    .map((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 ? " " : character)
+    .join("")
+  const cleaned = safeValue
     .replace(/[\\/:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/[. ]+$/g, "")
     .trim()
-    .slice(0, 120)
+  if (!cleaned || cleaned === "." || cleaned === "..") return ""
+  if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(cleaned)) return `${cleaned}-`
+  return cleaned.slice(0, 120)
 }
 
 function ensurePdfFilename(filename) {
