@@ -545,6 +545,22 @@ test("ELOLMS pages get a global Space Grotesk font layer", async () => {
   assert.match(source, /:not\(\.icon\):not\(\.material-icons\):not\(\.material-symbols-outlined\)/)
 })
 
+test("deadline page hides only the requested native calendar controls", async () => {
+  const source = await readFile(new URL("../src/deadlines.js", import.meta.url), "utf8")
+  const start = source.indexOf("function hideNativeCalendarControls")
+  const end = source.indexOf("function showDeadlineLoading", start)
+  const controlCode = source.slice(start, end)
+
+  assert.ok(start >= 0 && end > start)
+  assert.match(controlCode, /#page-header/)
+  assert.match(controlCode, /#calendarviewdropdown/)
+  assert.match(controlCode, /#calendar-course-filter/)
+  assert.match(controlCode, /su kien moi/)
+  assert.match(controlCode, /\/calendar\/managesubscriptions\.php/)
+  assert.match(controlCode, /style\.setProperty\("display", "none", "important"\)/)
+  assert.doesNotMatch(controlCode, /querySelectorAll\("img"\)|backgroundImage|hideNativeCalendarBanner/)
+})
+
 test("ELOLMS times are normalized to 24-hour format across dynamic page content", async () => {
   const source = await readFile(new URL("../src/time-format.js", import.meta.url), "utf8")
   const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"))

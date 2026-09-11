@@ -109,6 +109,8 @@
     updateDeadlineNavState()
 
     if (document.getElementById(DEADLINE_DASHBOARD_ID)) {
+      const existingRegion = document.querySelector("#region-main")
+      if (existingRegion instanceof HTMLElement) hideNativeCalendarControls(existingRegion)
       hideDeadlineLoading()
       return
     }
@@ -119,6 +121,7 @@
       return
     }
 
+    hideNativeCalendarControls(region)
     const eventItems = findEventItems(region)
     const nativeEvents = eventItems
       .map(extractEvent)
@@ -136,6 +139,7 @@
         region.append(dashboard)
       }
 
+      hideNativeCalendarControls(region)
       eventItems.forEach((item) => {
         if (item instanceof HTMLElement) item.hidden = true
       })
@@ -150,11 +154,55 @@
         region.append(dashboard)
       }
 
+      hideNativeCalendarControls(region)
       eventItems.forEach((item) => {
         if (item instanceof HTMLElement) item.hidden = true
       })
       hideDeadlineLoading()
     })
+  }
+
+  function hideNativeCalendarControls(region) {
+    const dashboard = document.getElementById(DEADLINE_DASHBOARD_ID)
+    const pageHeader = document.querySelector("#page-header")
+    if (pageHeader instanceof HTMLElement) forceHideDeadlineElement(pageHeader)
+
+    const viewDropdown = region.querySelector("#calendarviewdropdown")
+    const courseFilter = region.querySelector("#calendar-course-filter")
+    const newEventButton = Array.from(region.querySelectorAll("a, button")).find((element) => {
+      return normalizeText(element.textContent).toLowerCase() === "su kien moi"
+    })
+    const controlNodes = [viewDropdown, courseFilter, newEventButton]
+      .filter((node) => node instanceof HTMLElement)
+
+    if (controlNodes.length) {
+      let controlsRoot = controlNodes[0].parentElement
+      while (controlsRoot && controlsRoot !== region) {
+        const containsAllControls = controlNodes.every((node) => controlsRoot.contains(node))
+        const containsDashboard = dashboard instanceof HTMLElement && controlsRoot.contains(dashboard)
+        if (containsAllControls && !containsDashboard) break
+        controlsRoot = controlsRoot.parentElement
+      }
+
+      if (controlsRoot && controlsRoot !== region) forceHideDeadlineElement(controlsRoot)
+      else controlNodes.forEach(forceHideDeadlineElement)
+    }
+
+    const nativeHeading = Array.from(region.querySelectorAll("h2, h3, h4")).find((heading) => {
+      return !heading.closest(`#${DEADLINE_DASHBOARD_ID}`)
+        && normalizeText(heading.textContent).toLowerCase() === "su kien sap den"
+    })
+    if (nativeHeading instanceof HTMLElement) forceHideDeadlineElement(nativeHeading)
+
+    const manageSubscriptions = region.querySelector('a[href*="/calendar/managesubscriptions.php"]')
+    if (manageSubscriptions instanceof HTMLElement) forceHideDeadlineElement(manageSubscriptions)
+  }
+
+  function forceHideDeadlineElement(element) {
+    if (!(element instanceof HTMLElement)) return
+    element.hidden = true
+    element.setAttribute("aria-hidden", "true")
+    element.style.setProperty("display", "none", "important")
   }
 
   function showDeadlineLoading() {
