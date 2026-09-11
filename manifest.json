@@ -51,6 +51,15 @@
         "src/notifications.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://elolms.ou.edu.vn/*"
+      ],
+      "js": [
+        "src/deadlines.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
