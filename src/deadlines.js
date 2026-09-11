@@ -287,6 +287,10 @@
     }))
   }
 
+  function needsRemoteCompletionCheck(url) {
+    return /\/mod\/(assign|quiz|forum)\//i.test(url || "")
+  }
+
   async function enrichForumCompletion(events) {
     const forumEvents = events.filter((event) => /\/mod\/forum\//i.test(event.href || ""))
     if (!forumEvents.length) return
@@ -329,9 +333,19 @@
   }
 
   function quizHasSubmission(doc, normalizedText) {
-    if (/da hoan thanh|completed|finished|submitted|attempt summary|ket qua lan lam/.test(normalizedText)
-      && !/chua hoan thanh|not completed|no attempts/.test(normalizedText)) return true
-    return Boolean(doc.querySelector('a[href*="/mod/quiz/review.php?attempt="], .quizattemptsummary, .quizreviewsummary'))
+    if (doc.querySelector('a[href*="/mod/quiz/review.php?attempt="]')) return true
+
+    const attemptRegions = Array.from(doc.querySelectorAll(
+      '.quizattemptsummary, .quizreviewsummary, .quizattempt, [id*="quiz_attempt"], [data-region*="attempt"]'
+    ))
+    const attemptText = normalizeText(attemptRegions.map((node) => node.textContent || "").join(" "))
+    if (attemptText) {
+      if (/no attempts|chua co lan lam|attempts 0|0 attempts|so lan lam bai 0|lan lam bai 0/.test(attemptText)) return false
+      if (/finished|completed|submitted|da hoan thanh|da nop/.test(attemptText)) return true
+    }
+
+    return /(?:attempt summary|attempts summary|ket qua lan lam).*(?:finished|completed|submitted|da hoan thanh|da nop)/.test(normalizedText)
+      && !/no attempts|chua co lan lam|attempts 0|0 attempts|so lan lam bai 0|lan lam bai 0/.test(normalizedText)
   }
 
   function checkForumParticipation(forumUrl, userName) {
@@ -424,7 +438,7 @@
       const title = cleanEventTitle(titleElement?.textContent || titleLink?.textContent || "Deadline")
       const href = titleLink?.href ? new URL(titleLink.href, courseUrl).toString() : courseUrl
       const course = cleanText(doc.querySelector(".page-header-headings h1, header h1")?.textContent || fallbackCourse)
-      const completed = detectActivityCompletion(item)
+      const completed = needsRemoteCompletionCheck(href) ? false : detectActivityCompletion(item)
 
       for (const match of text.matchAll(deadlinePattern)) {
         const hour = to24Hour(match[4], match[6])
@@ -456,7 +470,7 @@
 
   function detectActivityCompletion(item) {
     const completionNodes = Array.from(item.querySelectorAll(
-      '[data-region="completion-info"], .activity-completion, .completion-info, .completioninfo, .submissionstatus, .submissionstatussubmitted, .activity-information'
+      '[data-region="completion-info"], .activity-completion, .completion-info, .completioninfo, .submissionstatus, .submissionstatussubmitted'
     ))
     if (!completionNodes.length) return false
 
@@ -525,7 +539,7 @@
       time: formatTime(date),
       href: activityLink?.href || "",
       kind: classifyEventKind(title),
-      completed: detectActivityCompletion(item),
+      completed: needsRemoteCompletionCheck(activityLink?.href) ? false : detectActivityCompletion(item),
       source: item
     }
   }
