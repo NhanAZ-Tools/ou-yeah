@@ -16,6 +16,9 @@
   const SNAPSHOT_PREFIX = "ouYeahCourseDataSnapshot:"
   const MAX_BINARY_FILE_BYTES = 64 * 1024 * 1024
   const MAX_ARCHIVE_BYTES = 320 * 1024 * 1024
+  const COURSE_FOLDER_MAX_LENGTH = 60
+  const COURSE_DATA_RELATIVE_PATH_MAX = 200
+  const COURSE_DATA_LEAF_LENGTH_BUDGET = 24
   const MATERIAL_TYPES = [
     { id: "video", label: "Video" },
     { id: "slide", label: "Slide" },
@@ -56,6 +59,7 @@
   let pauseRequested = false
   let cancelRequested = false
   let panelMinimized = false
+  let extensionContextInvalidated = false
 
   init().catch(handleError)
 
@@ -606,9 +610,9 @@
         } else {
           const extension = extensionForResponse(contentType, responseUrl) || extensionFromValue(activity.title) || "bin"
           const bytes = new Uint8Array(await response.arrayBuffer())
-          const path = `${directory}/${sanitizeSegment(removeKnownExtension(activity.title), 80)}.${extension}`
+          const path = `${directory}/${sanitizeSegment(removeKnownExtension(activity.title), 180)}.${extension}`
           addBinary(context, path, bytes, { sourceUrl: activity.sourceUrl, contentType })
-          addJson(context, `${directory}/activity.json`, { ...activity, resolvedUrl: responseUrl, contentType, localPath: path })
+          addJson(context, `${directory}/activity.json`, { ...activity, resolvedUrl: responseUrl, contentType, localPath: normalizeArchivePath(path) })
           updateEntity(context, activity.id, { localPath: path })
         }
       } catch (error) {
@@ -666,7 +670,7 @@
         const links = collectFileLinks(main, activity.sourceUrl)
         const assets = []
         for (const link of links) {
-          const result = await addRemoteAsset(context, link.url, `${directory}/files/${sanitizeSegment(link.title || "Tệp", 70)}`)
+          const result = await addRemoteAsset(context, link.url, `${directory}/files/${sanitizeSegment(link.title || "Tệp", 180)}`)
           if (result) assets.push({ ...link, localPath: result.path })
         }
         const data = {
@@ -1070,11 +1074,24 @@
 
   function pathForActivity(activity) {
     const sections = activity.sectionPath?.length ? activity.sectionPath : ["Khác"]
-    return [...sections, `${pad(activity.order)}-${activity.title}`].map((part) => sanitizeSegment(part, 90)).join("/")
+    const activityName = activity.materialType
+      ? ({ video: "Video", slide: "Slide", script: "Script" })[activity.materialType] || "Học liệu"
+      : activity.title
+    const activityLength = activity.materialType ? 48 : 180
+    return [...sections.map(sectionDirectoryName), `${pad(activity.order)}-${activityName}`].map((part, index, parts) => {
+      const maxLength = index === parts.length - 1 ? activityLength : 180
+      return sanitizeSegment(part, maxLength)
+    }).join("/")
+  }
+
+  function sectionDirectoryName(value) {
+    const cleaned = sanitizeSegment(value, 180)
+    const label = /^(CHƯƠNG(?:\s+MỞ\s+ĐẦU|\s+\d+)|CHỦ ĐỀ\s+\d+(?:\.\d+)*|PHẦN\s+\d+)/iu.exec(cleaned)?.[1]
+    return sanitizeSegment(label || cleaned, 180)
   }
 
   function forumDirectory(activity) {
-    return `${pad(activity.order)}-${sanitizeSegment(activity.title, 90)}`
+    return `${pad(activity.order)}-${sanitizeSegment(activity.title, 180)}`
   }
 
   function assignmentDirectory(activity) {
@@ -1182,7 +1199,7 @@
     const files = [...imageLinks, ...collectFileLinks(root, baseUrl)]
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index]
-      await addRemoteAsset(context, file.url, `${directory}/${pad(index + 1)}-${sanitizeSegment(file.title, 60)}`)
+      await addRemoteAsset(context, file.url, `${directory}/${pad(index + 1)}-${sanitizeSegment(file.title, 180)}`)
     }
   }
 
@@ -1219,13 +1236,13 @@
           message: "Tài liệu dùng trình xem chéo miền; thư mục AI đã lưu liên kết nguồn nhưng trình duyệt có thể không cho nhúng tệp nhị phân."
         })
       }
-      result = { path, sourceUrl: fetchUrl, contentType, embeddedUrls }
+      result = { path: normalizeArchivePath(path), sourceUrl: fetchUrl, contentType, embeddedUrls }
     } else {
       const bytes = new Uint8Array(await response.arrayBuffer())
       const extension = extensionForResponse(contentType, responseUrl) || extensionFromValue(fetchUrl) || "bin"
       const path = `${stripTrailingExtension(preferredPath)}.${extension}`
       if (!addBinary(context, path, bytes, { sourceUrl: fetchUrl, contentType })) return null
-      result = { path, sourceUrl: fetchUrl, contentType, size: bytes.length }
+      result = { path: normalizeArchivePath(path), sourceUrl: fetchUrl, contentType, size: bytes.length }
     }
     context.assetCache.set(fetchUrl, result)
     return result
@@ -1573,7 +1590,9 @@ Do not infer content that is locked, missing or marked as failed.
         materialType: entity.materialType || null,
         title: entity.title,
         sourceUrl: entity.sourceUrl || null,
-        localPath: entity.localPath || null,
+        localPath: entity.localPath
+          ? entity.externalDownload ? entity.localPath : normalizeArchivePath(entity.localPath)
+          : null,
         sectionPath: entity.sectionPath || [],
         accessState: entity.accessState || "available",
         privacy: entity.privacy || "course"
@@ -1663,7 +1682,12 @@ Do not infer content that is locked, missing or marked as failed.
 
   function updateEntity(context, id, changes) {
     const entity = context.entities.find((item) => item.id === id)
-    if (entity) Object.assign(entity, changes)
+    if (!entity) return
+    const normalizedChanges = { ...changes }
+    if (typeof normalizedChanges.localPath === "string" && !normalizedChanges.externalDownload) {
+      normalizedChanges.localPath = normalizeArchivePath(normalizedChanges.localPath)
+    }
+    Object.assign(entity, normalizedChanges)
   }
 
   function addText(context, name, value) {
@@ -1762,6 +1786,10 @@ Do not infer content that is locked, missing or marked as failed.
 
   function sendExtensionMessage(message) {
     return new Promise((resolve, reject) => {
+      if (!isExtensionContextAvailable()) {
+        reject(extensionContextError())
+        return
+      }
       try {
         chrome.runtime.sendMessage(message, (response) => {
           const error = chrome.runtime.lastError?.message
@@ -1775,7 +1803,7 @@ Do not infer content that is locked, missing or marked as failed.
   }
 
   function courseDownloadFolder(course) {
-    return `OU Yeah!/${sanitizeSegment(course.title, 120)}`
+    return `OU Yeah!/${sanitizeSegment(course.title, COURSE_FOLDER_MAX_LENGTH)}`
   }
 
   function ensureRoot() {
@@ -1855,6 +1883,7 @@ Do not infer content that is locked, missing or marked as failed.
       renderPanel()
     }
     const terminalStatus = ["complete", "canceled", "error", "interrupted"].includes(activeSession.status)
+    const contextInvalidated = activeSession.status === "context-invalidated"
     const panelActions = {
       onMinimize: () => {
         panelMinimized = true
@@ -1866,7 +1895,10 @@ Do not infer content that is locked, missing or marked as failed.
       },
       ...(activeSession.status === "running" ? { onPause, onCancel } : {}),
       ...(activeSession.status === "paused" ? { onResume, onCancel } : {}),
-      ...(terminalStatus ? {
+      ...(contextInvalidated ? {
+        onReload: () => location.reload()
+      } : {}),
+      ...(!contextInvalidated && terminalStatus ? {
         ...(activeSession.status !== "complete" || activeSession.errors?.length ? {
           onRetry: () => retryExport().catch(handleError)
         } : {}),
@@ -1922,6 +1954,7 @@ Do not infer content that is locked, missing or marked as failed.
           ${actions.onPause ? '<button type="button" data-ou-course-data-pause>Tạm dừng</button>' : ""}
           ${actions.onResume ? '<button type="button" data-ou-course-data-resume>Tiếp tục</button>' : ""}
           ${actions.onCancel ? '<button type="button" data-ou-course-data-cancel>Hủy</button>' : ""}
+          ${actions.onReload ? '<button type="button" class="is-primary" data-ou-course-data-reload>Tải lại tab</button>' : ""}
           ${actions.onRetry ? '<button type="button" class="is-primary" data-ou-course-data-retry>Chạy lại</button>' : ""}
           ${actions.onNew ? '<button type="button" class="is-primary" data-ou-course-data-new>Xuất bản mới</button>' : ""}
           ${actions.onDismiss ? '<button type="button" data-ou-course-data-dismiss>Đóng</button>' : ""}
@@ -1932,6 +1965,7 @@ Do not infer content that is locked, missing or marked as failed.
     root.querySelector("[data-ou-course-data-pause]")?.addEventListener("click", () => actions.onPause?.())
     root.querySelector("[data-ou-course-data-resume]")?.addEventListener("click", () => actions.onResume?.())
     root.querySelector("[data-ou-course-data-cancel]")?.addEventListener("click", () => actions.onCancel?.())
+    root.querySelector("[data-ou-course-data-reload]")?.addEventListener("click", () => actions.onReload?.())
     root.querySelector("[data-ou-course-data-retry]")?.addEventListener("click", () => actions.onRetry?.())
     root.querySelector("[data-ou-course-data-new]")?.addEventListener("click", () => actions.onNew?.())
     root.querySelector("[data-ou-course-data-dismiss]")?.addEventListener("click", () => actions.onDismiss?.())
@@ -1960,7 +1994,7 @@ Do not infer content that is locked, missing or marked as failed.
   }
 
   function panelTitle(status) {
-    return ({ running: "Đang xuất dữ liệu", paused: "Đã tạm dừng", building: "Đang ghi file AI", delegated: "Đang tải học liệu", complete: "Cây dữ liệu AI đã sẵn sàng", canceled: "Đã hủy", interrupted: "Tiến trình bị gián đoạn", error: "Xuất dữ liệu gặp lỗi" })[status] || "Xuất dữ liệu khóa học"
+    return ({ running: "Đang xuất dữ liệu", paused: "Đã tạm dừng", building: "Đang ghi file AI", delegated: "Đang tải học liệu", complete: "Cây dữ liệu AI đã sẵn sàng", canceled: "Đã hủy", interrupted: "Tiến trình bị gián đoạn", error: "Xuất dữ liệu gặp lỗi", "context-invalidated": "Cần tải lại tab" })[status] || "Xuất dữ liệu khóa học"
   }
 
   function estimateRemainingText(completed, total, startedAt, status) {
@@ -1992,12 +2026,41 @@ Do not infer content that is locked, missing or marked as failed.
     document.documentElement.dataset.ouYeahCourseDataBusy = value ? "true" : "false"
   }
 
+  function extensionContextError() {
+    return new Error("Extension context invalidated.")
+  }
+
+  function isExtensionContextAvailable() {
+    try {
+      return Boolean(chrome?.runtime?.id && chrome.runtime.getURL(""))
+    } catch {
+      return false
+    }
+  }
+
+  function isExtensionContextError(error) {
+    return /extension context invalidated/i.test(readableError(error))
+  }
+
   function handleError(error) {
     const message = readableError(error)
+    if (isExtensionContextError(error)) {
+      if (extensionContextInvalidated) return
+      extensionContextInvalidated = true
+      pauseRequested = true
+      cancelRequested = false
+      setCourseDataBusy(false)
+      if (!activeSession) return
+      activeSession.status = "context-invalidated"
+      activeSession.message = "Tiện ích vừa được cập nhật. Tải lại tab khóa học để tiếp tục; snapshot trước vẫn an toàn."
+      panelMinimized = false
+      renderPanel()
+      return
+    }
     console.warn("OU Yeah!: course data export failed", error)
     if (!activeSession) return
     activeSession.status = "error"
-    activeSession.message = /Extension context invalidated/i.test(message) ? "Tiện ích vừa được cập nhật. Tải lại tab khóa học rồi chạy lại; snapshot trước vẫn an toàn." : message
+    activeSession.message = message
     activeSession.errors ||= []
     activeSession.errors.push(message)
     setCourseDataBusy(false)
@@ -2027,13 +2090,109 @@ Do not infer content that is locked, missing or marked as failed.
   }
 
   function normalizeArchivePath(value) {
-    return String(value || "file").replace(/\\/g, "/").split("/").filter(Boolean).map((part) => sanitizeSegment(part, 110)).join("/")
+    const rawSegments = String(value || "file").replace(/\\/g, "/").split("/").filter(Boolean)
+    const segments = rawSegments.map((part, index) => sanitizeArchiveSegment(part, 180, index === rawSegments.length - 1))
+    return compactArchivePath(segments, COURSE_DATA_RELATIVE_PATH_MAX).join("/")
+  }
+
+  function compactArchivePath(segments, maxLength) {
+    const compacted = segments.map((segment) => String(segment))
+    const leafIndex = compacted.length - 1
+    if (leafIndex < 0) return compacted
+    if (leafIndex === 0) return [truncateArchiveSegment(compacted[0], maxLength, true)]
+    const originalParentLength = compacted.slice(0, -1).join("/").length
+    const minimumLeafReserve = COURSE_DATA_LEAF_LENGTH_BUDGET
+    if (compacted.join("/").length <= maxLength && originalParentLength + 1 + minimumLeafReserve <= maxLength) return compacted
+
+    const separatorLength = compacted.length - 1
+    const directorySegments = compacted.slice(1, -1)
+    let rootLength = Math.min(compacted[0].length, 16)
+    let leafReserve = minimumLeafReserve
+    const minimumDirectoryBudget = directorySegments.length * 14
+    let directoryBudget = maxLength - separatorLength - rootLength - leafReserve
+
+    if (directoryBudget < minimumDirectoryBudget) {
+      let deficit = minimumDirectoryBudget - directoryBudget
+      const leafReduction = Math.min(deficit, Math.max(0, leafReserve - 12))
+      leafReserve -= leafReduction
+      deficit -= leafReduction
+      const rootReduction = Math.min(deficit, Math.max(0, rootLength - 8))
+      rootLength -= rootReduction
+      directoryBudget = maxLength - separatorLength - rootLength - leafReserve
+    }
+
+    const directoryLengths = allocateReadableArchiveLengths(
+      directorySegments,
+      Math.max(minimumDirectoryBudget, directoryBudget),
+      directorySegments.map((_, index) => index === 0 ? 72 : 44),
+      14
+    )
+    compacted[0] = truncateArchiveSegment(compacted[0], rootLength, false)
+    directorySegments.forEach((segment, index) => {
+      compacted[index + 1] = truncateArchiveSegment(segment, directoryLengths[index], false)
+    })
+    const parentLength = compacted.slice(0, -1).join("/").length
+    const availableLeafLength = Math.max(10, Math.min(leafReserve, maxLength - parentLength - 1))
+    compacted[leafIndex] = truncateArchiveSegment(compacted[leafIndex], availableLeafLength, true)
+    return compacted
+  }
+
+  function allocateReadableArchiveLengths(segments, budget, preferredLengths, minimumLength) {
+    if (!segments.length) return []
+    const affordableMinimum = Math.max(7, Math.min(minimumLength, Math.floor(budget / segments.length)))
+    const lengths = segments.map((segment) => Math.min(segment.length, affordableMinimum))
+    let remaining = Math.max(0, budget - lengths.reduce((sum, length) => sum + length, 0))
+    const preferred = segments.map((segment, index) => Math.min(segment.length, preferredLengths[index] || segment.length))
+    while (remaining > 0) {
+      const candidates = segments
+        .map((segment, index) => ({ index, capacity: Math.max(0, preferred[index] - lengths[index]) }))
+        .filter((entry) => entry.capacity > 0)
+      if (!candidates.length) break
+      const capacityTotal = candidates.reduce((sum, entry) => sum + entry.capacity, 0)
+      let allocated = 0
+      candidates.forEach((entry) => {
+        const share = Math.min(entry.capacity, Math.floor((remaining * entry.capacity) / capacityTotal))
+        lengths[entry.index] += share
+        allocated += share
+      })
+      if (!allocated) {
+        const target = candidates[0]
+        lengths[target.index] += 1
+        allocated = 1
+      }
+      remaining -= allocated
+    }
+    return lengths
+  }
+
+  function sanitizeArchiveSegment(value, maxLength, preserveExtension) {
+    const safeValue = Array.from(cleanText(value)).map((character) => {
+      const code = character.charCodeAt(0)
+      return code < 32 || code === 127 ? "-" : character
+    }).join("")
+    let cleaned = safeValue.replace(/[<>:"/\\|?*]+/g, " - ").replace(/[. ]+$/g, "").replace(/\s+/g, " ").trim()
+    if (!cleaned || cleaned === "." || cleaned === "..") cleaned = "Không tên"
+    if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(cleaned)) cleaned = `${cleaned}-`
+    return truncateArchiveSegment(cleaned, maxLength, preserveExtension)
+  }
+
+  function truncateArchiveSegment(segment, maxLength, preserveExtension) {
+    if (segment.length <= maxLength) return segment
+    const extension = preserveExtension ? /\.[a-z0-9]{1,8}$/i.exec(segment)?.[0] || "" : ""
+    const stem = extension ? segment.slice(0, -extension.length) : segment
+    const available = Math.max(1, maxLength - extension.length)
+    return `${stem.slice(0, available).replace(/[. ]+$/g, "") || "f"}${extension}`
   }
 
   function sanitizeSegment(value, maxLength = 70) {
-    const safeValue = Array.from(cleanText(value)).map((character) => character.charCodeAt(0) < 32 ? "-" : character).join("")
-    const cleaned = safeValue.replace(/[<>:"/\\|?*]/g, "-").replace(/[. ]+$/g, "").replace(/\s+/g, " ").trim()
-    return (cleaned || "Không tên").slice(0, maxLength)
+    const safeValue = Array.from(cleanText(value)).map((character) => {
+      const code = character.charCodeAt(0)
+      return code < 32 || code === 127 ? "-" : character
+    }).join("")
+    let cleaned = safeValue.replace(/[<>:"/\\|?*]+/g, " - ").replace(/[. ]+$/g, "").replace(/\s+/g, " ").trim()
+    if (!cleaned || cleaned === "." || cleaned === "..") cleaned = "Không tên"
+    if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(cleaned)) cleaned = `${cleaned}-`
+    return truncateArchiveSegment(cleaned, maxLength, false)
   }
 
   function stripTrailingExtension(value) {

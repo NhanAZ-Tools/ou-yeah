@@ -17,6 +17,10 @@
   const HLS_RE = /\.m3u8(?:[?#]|$)/i
   const DASH_RE = /\.mpd(?:[?#]|$)/i
   const COURSE_ROOT_FOLDER = "OU Yeah!"
+  const COURSE_FOLDER_MAX_LENGTH = 60
+  const DOWNLOAD_RELATIVE_PATH_MAX = 200
+  const DOWNLOAD_LEAF_LENGTH_BUDGET = 72
+  const MATERIAL_TITLE_PREFIX_RE = /^\[(?:xem|tải về)\]\s*(?:video|slide|script)\b\s*[-:–—]?\s*/i
   const recentJobMessages = new Map()
   const jobWaiters = new Map()
 
@@ -551,6 +555,7 @@
       const result = await waitForJob(response.jobId, 45 * 60_000)
       if (result.status === "canceled") throw cancellationError()
       if (result.status === "error") throw new Error(result.label || "Tải video thất bại.")
+      syncResourcePathFromDownload(resource, result.filename)
     } finally {
       if (activeJobId === response.jobId) activeJobId = null
     }
@@ -840,9 +845,11 @@
         pathKeys.push(key)
       })
       const relativeDirectory = directoryParts.filter(Boolean).join("/")
-      const downloadDirectory = [COURSE_ROOT_FOLDER, sanitizeSegment(course.title, 120), relativeDirectory].filter(Boolean).join("/")
-      const baseTitle = sanitizeSegment(resource.title, 60)
-      const key = `${downloadDirectory}/${baseTitle}`.toLowerCase()
+      const downloadDirectory = [COURSE_ROOT_FOLDER, sanitizeSegment(course.title, COURSE_FOLDER_MAX_LENGTH), relativeDirectory].filter(Boolean).join("/")
+      const baseTitle = resource.type === "video" || resource.type === "slide" || resource.type === "script"
+        ? materialFilenameStem(resource)
+        : sanitizeSegment(resource.title, 120)
+      const key = `${downloadDirectory}/${baseTitle}/${resource.type}/${resource.extension || ""}`.toLowerCase()
       const count = (duplicates.get(key) || 0) + 1
       duplicates.set(key, count)
       const suffix = count > 1 ? ` (${count})` : ""
@@ -863,57 +870,123 @@
     if (extension && !segments[lastIndex].toLowerCase().endsWith(extension)) {
       segments[lastIndex] += extension
     }
-    const fitted = compactPathSegments(segments, 180)
+    const fitted = compactPathSegments(segments, DOWNLOAD_RELATIVE_PATH_MAX)
     resource.downloadPath = fitted.join("/")
     resource.localPath = fitted.slice(2).join("/")
+  }
+
+  function syncResourcePathFromDownload(resource, filename) {
+    const completed = String(filename || "")
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean)
+    const expected = String(resource.downloadPath || "")
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean)
+    if (completed.length < 3 || expected.length < 3) return
+    if (completed[0] !== expected[0] || completed[1] !== expected[1]) return
+    resource.downloadPath = completed.join("/")
+    resource.localPath = completed.slice(2).join("/")
   }
 
   function compactPathSegments(segments, maxLength) {
     const compacted = segments.map((segment) => String(segment))
     let joined = compacted.join("/")
-    if (joined.length <= maxLength) return compacted
+    const parentLength = compacted.slice(0, -1).join("/").length
+    if (joined.length <= maxLength && parentLength + 1 + DOWNLOAD_LEAF_LENGTH_BUDGET <= maxLength) return compacted
 
-    const leafIndex = compacted.length - 1
-    const leafExcess = joined.length - maxLength
-    compacted[leafIndex] = truncatePathSegment(
-      compacted[leafIndex],
-      Math.max(1, compacted[leafIndex].length - leafExcess),
-      true
-    )
-    joined = compacted.join("/")
+    const leaf = compacted.pop()
+    const leafBudget = Math.min(DOWNLOAD_LEAF_LENGTH_BUDGET, Math.max(1, maxLength - 1))
+    const parentBudget = Math.max(1, maxLength - leafBudget - 1)
+    const parents = compactDirectoryPathSegments(compacted, parentBudget)
+    const availableLeafLength = Math.max(1, maxLength - parents.join("/").length - 1)
+    parents.push(truncatePathSegment(leaf, Math.min(leafBudget, availableLeafLength), true))
+    return parents
+  }
+
+  function compactDirectoryPathSegments(segments, maxLength) {
+    let joined = segments.join("/")
+    if (joined.length <= maxLength) return segments
 
     while (joined.length > maxLength) {
-      const directoryIndexes = compacted
-        .slice(2, -1)
+      const directoryIndexes = segments
+        .slice(2)
         .map((segment, offset) => ({ index: offset + 2, length: segment.length }))
-        .filter((entry) => entry.length > 10)
+        .filter((entry) => entry.length > 12)
         .sort((a, b) => b.index - a.index || b.length - a.length)
       const target = directoryIndexes[0]
       if (!target) break
       const excess = joined.length - maxLength
-      compacted[target.index] = truncatePathSegment(
-        compacted[target.index],
-        Math.max(1, compacted[target.index].length - excess),
+      segments[target.index] = truncatePathSegment(
+        segments[target.index],
+        Math.max(12, segments[target.index].length - excess),
         false
       )
-      joined = compacted.join("/")
+      joined = segments.join("/")
     }
-    return compacted
+
+    if (joined.length > maxLength) {
+      const fallbackIndexes = segments
+        .map((segment, index) => ({ index, length: segment.length }))
+        .filter((entry) => entry.length > (entry.index === 0 ? 8 : 12))
+        .sort((a, b) => b.index - a.index || b.length - a.length)
+      while (joined.length > maxLength && fallbackIndexes.length) {
+        const target = fallbackIndexes[0]
+        const minimum = target.index === 0 ? 8 : 12
+        const excess = joined.length - maxLength
+        segments[target.index] = truncatePathSegment(
+          segments[target.index],
+          Math.max(minimum, segments[target.index].length - excess),
+          false
+        )
+        joined = segments.join("/")
+        if (segments[target.index].length <= minimum) fallbackIndexes.shift()
+      }
+    }
+
+    if (joined.length > maxLength) {
+      const fallbackIndexes = segments
+        .map((segment, index) => ({ index, length: segment.length }))
+        .filter((entry) => entry.length > 1)
+        .sort((a, b) => b.index - a.index || b.length - a.length)
+      while (joined.length > maxLength && fallbackIndexes.length) {
+        const target = fallbackIndexes[0]
+        const excess = joined.length - maxLength
+        segments[target.index] = truncatePathSegment(segments[target.index], Math.max(1, segments[target.index].length - excess), false)
+        joined = segments.join("/")
+        if (segments[target.index].length <= 1) fallbackIndexes.shift()
+      }
+    }
+    return segments
+  }
+
+  function materialFilenameStem(resource) {
+    const fallback = ({ video: "Video", slide: "Slide", script: "Script" })[resource.type] || "Hoc lieu"
+    const title = String(resource.title || "")
+      .replace(MATERIAL_TITLE_PREFIX_RE, "")
+      .replace(/^(?:video|slide|script)\b\s*[-:–—]?\s*/i, "")
+      .replace(/\.[a-z0-9]{2,8}$/i, "")
+      .trim()
+    return sanitizeSegment(title || fallback, 96)
   }
 
   function compactSectionDirectory(title) {
-    return sanitizeSegment(title, 120)
+    const cleaned = sanitizeSegment(title, 120)
+    const label = /^(CHƯƠNG(?:\s+MỞ\s+ĐẦU|\s+\d+)|CHỦ ĐỀ\s+\d+(?:\.\d+)*|PHẦN\s+\d+)/iu.exec(cleaned)?.[1]
+    return sanitizeSegment(label || cleaned, 120)
   }
 
   function compactPathSegment(segment, maxLength) {
-    return String(segment || "").slice(0, Math.max(1, maxLength)).trimEnd()
+    return truncatePathSegment(String(segment || ""), Math.max(1, maxLength), false)
   }
 
   function truncatePathSegment(segment, maxLength, preserveExtension) {
     if (segment.length <= maxLength) return segment
     const extension = preserveExtension ? /\.[a-z0-9]{1,8}$/i.exec(segment)?.[0] || "" : ""
+    const stem = extension ? segment.slice(0, -extension.length) : segment
     const available = Math.max(1, maxLength - extension.length)
-    return `${segment.slice(0, available).trimEnd()}${extension}`
+    return `${stem.slice(0, available).replace(/[. ]+$/g, "") || "f"}${extension}`
   }
 
   function courseMetadata() {
@@ -946,7 +1019,7 @@
     const manifestFilename = session.manifestFilename
       ? sanitizeSegment(session.manifestFilename, 120)
       : `ou-yeah-course-manifest-${sanitizeSegment(session.scopeTitle || "hoc-lieu", 72)}.json`
-    const filename = `${COURSE_ROOT_FOLDER}/${sanitizeSegment(session.course.title, 120)}/${manifestFilename}`
+    const filename = `${COURSE_ROOT_FOLDER}/${sanitizeSegment(session.course.title, COURSE_FOLDER_MAX_LENGTH)}/${manifestFilename}`
     const response = await sendRuntimeMessage({
       type: "ou-yeah-download-course-manifest",
       filename,
@@ -1145,6 +1218,7 @@
           ${actions.onPause ? '<button type="button" data-ou-course-data-pause>Tạm dừng</button>' : ""}
           ${actions.onResume ? '<button type="button" data-ou-course-data-resume>Tiếp tục</button>' : ""}
           ${actions.onCancel ? '<button type="button" data-ou-course-data-cancel>Hủy</button>' : ""}
+          ${actions.onReload ? '<button type="button" class="is-primary" data-ou-course-data-reload>Tải lại tab</button>' : ""}
           ${actions.onRetry ? '<button type="button" class="is-primary" data-ou-course-data-retry>Chạy lại</button>' : ""}
           ${actions.onNew ? '<button type="button" class="is-primary" data-ou-course-data-new>Xuất bản mới</button>' : ""}
           ${actions.onDismiss ? '<button type="button" data-ou-course-data-dismiss>Đóng</button>' : ""}
@@ -1155,6 +1229,7 @@
     root.querySelector("[data-ou-course-data-pause]")?.addEventListener("click", () => actions.onPause?.())
     root.querySelector("[data-ou-course-data-resume]")?.addEventListener("click", () => actions.onResume?.())
     root.querySelector("[data-ou-course-data-cancel]")?.addEventListener("click", () => actions.onCancel?.())
+    root.querySelector("[data-ou-course-data-reload]")?.addEventListener("click", () => actions.onReload?.())
     root.querySelector("[data-ou-course-data-retry]")?.addEventListener("click", () => actions.onRetry?.())
     root.querySelector("[data-ou-course-data-new]")?.addEventListener("click", () => actions.onNew?.())
     root.querySelector("[data-ou-course-data-dismiss]")?.addEventListener("click", () => actions.onDismiss?.())
@@ -1505,12 +1580,13 @@
   }
 
   function sanitizeSegment(value, maxLength = 70) {
-    const cleaned = String(value || "")
+    let cleaned = String(value || "")
       .replace(/[\\/:*?"<>|]+/g, " - ")
       .replace(/\s+/g, " ")
       .replace(/[. ]+$/g, "")
       .trim()
     if (!cleaned) return "Không có tên"
+    if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(cleaned)) cleaned = `${cleaned}-`
     return compactPathSegment(cleaned, maxLength)
   }
 

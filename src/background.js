@@ -2,6 +2,11 @@ const ALLOWED_HOSTS = new Set(["elolms.ou.edu.vn", "player.vimeo.com"])
 const OFFSCREEN_DOCUMENT = "src/offscreen.html"
 const MEDIA_URL_RE = /\.(mp4|m4v|webm|mov|mkv|m3u8|mpd)(?:[?#]|$)/i
 const MEDIA_MIME_RE = /(?:video|mpegurl|dash\+xml|mp2t)/i
+// Chrome receives this as a path relative to Downloads. Keep enough room for
+// the user's absolute Downloads path so Windows' legacy MAX_PATH is not
+// allowed to turn a background download into a Save As fallback.
+const DOWNLOAD_RELATIVE_PATH_MAX = 200
+const DOWNLOAD_LEAF_LENGTH_BUDGET = 72
 
 const tabMedia = new Map()
 const downloadJobs = new Map()
@@ -68,6 +73,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.downloads.onChanged.addListener((delta) => {
   const jobId = trackedDownloads.get(delta.id)
   if (!jobId) return
+  const job = downloadJobs.get(jobId)
 
   if (delta.state?.current === "complete") {
     forwardProgress({
@@ -75,7 +81,8 @@ chrome.downloads.onChanged.addListener((delta) => {
       status: "complete",
       label: "Đã tải xong.",
       percent: 100,
-      downloadId: delta.id
+      downloadId: delta.id,
+      filename: job?.hlsFilename || job?.filename
     })
     trackedDownloads.delete(delta.id)
     downloadJobs.delete(jobId)
@@ -419,7 +426,8 @@ async function trackedDirectDownload(url, filename, sender, kind, conflictAction
         status: "complete",
         label: "Đã tải xong.",
         percent: 100,
-        downloadId
+        downloadId,
+        filename: job?.filename
       })
       trackedDownloads.delete(downloadId)
       downloadJobs.delete(jobId)
@@ -567,14 +575,14 @@ function handleHlsReady(message) {
   const job = downloadJobs.get(message.jobId)
   if (!job) return
   job.blobUrl = message.blobUrl
-  job.hlsFilename = message.filename || job.filename
+  job.hlsFilename = job.preservePath
+    ? sanitizeDownloadPath(message.filename || job.filename)
+    : sanitizeFilename(message.filename || job.filename)
 
   chrome.downloads.download(
     {
       url: message.blobUrl,
-      filename: job.preservePath
-        ? sanitizeDownloadPath(message.filename || job.filename)
-        : sanitizeFilename(message.filename || job.filename),
+      filename: job.hlsFilename,
       conflictAction: job.preservePath ? "overwrite" : "uniquify",
       saveAs: false
     },
@@ -605,7 +613,8 @@ function handleHlsReady(message) {
                 status: "complete",
                 label: "Đã tải xong.",
                 percent: 100,
-                downloadId
+                downloadId,
+                filename: job.hlsFilename
               })
               trackedDownloads.delete(downloadId)
               downloadJobs.delete(message.jobId)
@@ -649,7 +658,8 @@ function handleHlsReady(message) {
           jobId: message.jobId,
           status: "complete",
           label: "Đã gửi video sang Downloads.",
-          downloadId
+          downloadId,
+          filename: job.hlsFilename
         })
         downloadJobs.delete(message.jobId)
       }
@@ -742,7 +752,8 @@ function forwardProgress(message) {
       label: message.label,
       loaded: message.loaded,
       total: message.total,
-      percent: message.percent
+      percent: message.percent,
+      filename: message.filename
     },
     job.frameId == null ? undefined : { frameId: job.frameId }
   ).catch(() => {})
@@ -798,47 +809,87 @@ function sanitizeDownloadPath(filename) {
     .filter(Boolean)
     .slice(0, 12)
 
-  return compactDownloadPath(segments, 180) || "OU Yeah!/hoc-lieu"
+  return compactDownloadPath(segments, DOWNLOAD_RELATIVE_PATH_MAX) || "OU Yeah!/hoc-lieu"
 }
 
 function compactDownloadPath(segments, maxLength) {
   const compacted = segments.map((segment) => String(segment))
   let joined = compacted.join("/")
-  if (joined.length <= maxLength) return compacted.join("/")
+  const parentLength = compacted.slice(0, -1).join("/").length
+  if (joined.length <= maxLength && parentLength + 1 + DOWNLOAD_LEAF_LENGTH_BUDGET <= maxLength) return joined
 
-  const leafIndex = compacted.length - 1
-  const leafExcess = joined.length - maxLength
-  compacted[leafIndex] = truncateDownloadSegment(
-    compacted[leafIndex],
-    Math.max(1, compacted[leafIndex].length - leafExcess),
-    true
-  )
-  joined = compacted.join("/")
+  const leaf = compacted.pop()
+  const leafBudget = Math.min(DOWNLOAD_LEAF_LENGTH_BUDGET, Math.max(1, maxLength - 1))
+  const parentBudget = Math.max(1, maxLength - leafBudget - 1)
+  const parents = compactDownloadDirectories(compacted, parentBudget)
+  const availableLeafLength = Math.max(1, maxLength - parents.join("/").length - 1)
+  parents.push(truncateDownloadSegment(leaf, Math.min(leafBudget, availableLeafLength), true))
+  return parents.join("/")
+}
+
+function compactDownloadDirectories(segments, maxLength) {
+  let joined = segments.join("/")
+  if (joined.length <= maxLength) return segments
 
   while (joined.length > maxLength) {
-    const directoryIndexes = compacted
-      .slice(2, -1)
+    const directoryIndexes = segments
+      .slice(2)
       .map((segment, offset) => ({ index: offset + 2, length: segment.length }))
-      .filter((entry) => entry.length > 10)
+      .filter((entry) => entry.length > 12)
       .sort((a, b) => b.index - a.index || b.length - a.length)
     const target = directoryIndexes[0]
     if (!target) break
     const excess = joined.length - maxLength
-    compacted[target.index] = truncateDownloadSegment(
-      compacted[target.index],
-      Math.max(1, compacted[target.index].length - excess),
+    segments[target.index] = truncateDownloadSegment(
+      segments[target.index],
+      Math.max(12, segments[target.index].length - excess),
       false
     )
-    joined = compacted.join("/")
+    joined = segments.join("/")
   }
-  return compacted.join("/")
+
+  if (joined.length > maxLength) {
+    const fallbackIndexes = segments
+      .map((segment, index) => ({ index, length: segment.length }))
+      .filter((entry) => entry.length > (entry.index === 0 ? 8 : 12))
+      .sort((a, b) => b.index - a.index || b.length - a.length)
+    while (joined.length > maxLength && fallbackIndexes.length) {
+      const target = fallbackIndexes[0]
+      const minimum = target.index === 0 ? 8 : 12
+      const excess = joined.length - maxLength
+      segments[target.index] = truncateDownloadSegment(
+        segments[target.index],
+        Math.max(minimum, segments[target.index].length - excess),
+        false
+      )
+      joined = segments.join("/")
+      if (segments[target.index].length <= minimum) fallbackIndexes.shift()
+    }
+  }
+
+  if (joined.length > maxLength) {
+    const fallbackIndexes = segments
+      .map((segment, index) => ({ index, length: segment.length }))
+      .filter((entry) => entry.length > 1)
+      .sort((a, b) => b.index - a.index || b.length - a.length)
+    while (joined.length > maxLength && fallbackIndexes.length) {
+      const target = fallbackIndexes[0]
+      const excess = joined.length - maxLength
+      segments[target.index] = truncateDownloadSegment(segments[target.index], Math.max(1, segments[target.index].length - excess), false)
+      joined = segments.join("/")
+      if (segments[target.index].length <= 1) fallbackIndexes.shift()
+    }
+  }
+  return segments
 }
 
 function truncateDownloadSegment(segment, maxLength, preserveExtension) {
-  if (segment.length <= maxLength) return segment
-  const extension = preserveExtension ? /\.[a-z0-9]{1,8}$/i.exec(segment)?.[0] || "" : ""
+  const safeSegment = sanitizePathSegment(segment) || "item"
+  if (safeSegment.length <= maxLength) return safeSegment
+  const extension = preserveExtension ? /\.[a-z0-9]{1,8}$/i.exec(safeSegment)?.[0] || "" : ""
   const available = Math.max(1, maxLength - extension.length)
-  return `${segment.slice(0, available).trimEnd()}${extension}`
+  const stem = extension ? safeSegment.slice(0, -extension.length) : safeSegment
+  return `${stem.slice(0, available).replace(/[. ]+$/g, "") || "f"}${extension}`
 }
 
 function sanitizePathSegment(segment) {
@@ -852,7 +903,7 @@ function sanitizePathSegment(segment) {
     .trim()
   if (!cleaned || cleaned === "." || cleaned === "..") return ""
   if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(cleaned)) return `${cleaned}-`
-  return cleaned.slice(0, 120)
+  return cleaned.slice(0, 180)
 }
 
 function ensurePdfFilename(filename) {

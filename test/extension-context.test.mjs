@@ -58,6 +58,49 @@ test("HLS download initializes its worker cursor before workers run", async () =
   URL.revokeObjectURL(ready.blobUrl)
 })
 
+test("HLS download reports the real fMP4 container extension", async () => {
+  const source = await readFile(new URL("../src/offscreen.js", import.meta.url), "utf8")
+  const messages = []
+  const playlist = [
+    "#EXTM3U",
+    '#EXT-X-MAP:URI="init.mp4"',
+    "#EXTINF:5,",
+    "segment-1.m4s",
+    "#EXT-X-ENDLIST"
+  ].join("\n")
+  const context = vm.createContext({
+    AbortController,
+    Blob,
+    Headers,
+    URL,
+    chrome: {
+      runtime: {
+        onMessage: { addListener() {} },
+        sendMessage(message) {
+          messages.push(message)
+          return Promise.resolve()
+        }
+      }
+    },
+    fetch: async (url) => {
+      if (String(url).endsWith(".m3u8")) return { ok: true, status: 200, text: async () => playlist }
+      return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }
+    }
+  })
+
+  vm.runInContext(source, context, { filename: "src/offscreen.js" })
+  await vm.runInContext(`downloadHls({
+    jobId: "fmp4-job",
+    url: "https://cdn.example.test/video.m3u8",
+    filename: "OU Yeah!/course/video.ts"
+  })`, context)
+
+  const ready = messages.find((message) => message.type === "ou-yeah-hls-ready")
+  assert.ok(ready)
+  assert.equal(ready.filename, "OU Yeah!/course/video.mp4")
+  URL.revokeObjectURL(ready.blobUrl)
+})
+
 test("HLS cancellation aborts active segment fetches", async () => {
   const source = await readFile(new URL("../src/offscreen.js", import.meta.url), "utf8")
   let onMessage
@@ -335,6 +378,60 @@ test("background retries an HLS download already interrupted before tracking", a
   assert.equal(context.scheduledRetries.some(({ delay }) => delay === 1200), true)
 })
 
+test("background forwards the final HLS filename used by the manifest", async () => {
+  const source = await readFile(new URL("../src/background.js", import.meta.url), "utf8")
+  const event = () => ({ addListener() {} })
+  const downloaded = []
+  const progress = []
+  const context = vm.createContext({
+    setTimeout() { return 1 },
+    chrome: {
+      action: { onClicked: event() },
+      downloads: {
+        onChanged: event(),
+        download(options, callback) {
+          downloaded.push(options)
+          callback(77)
+        },
+        search() {
+          return Promise.resolve([{ state: "complete" }])
+        }
+      },
+      runtime: { onMessage: event() },
+      tabs: {
+        onRemoved: event(),
+        sendMessage(_tabId, message) {
+          progress.push(message)
+          return Promise.resolve()
+        }
+      },
+      webRequest: {
+        onBeforeRequest: event(),
+        onHeadersReceived: event()
+      }
+    }
+  })
+
+  vm.runInContext(source, context, { filename: "src/background.js" })
+  vm.runInContext(`
+    downloadJobs.set("fmp4-job", {
+      tabId: 46,
+      mode: "hls",
+      preservePath: true,
+      filename: "OU Yeah!/course/video.ts"
+    })
+    handleHlsReady({
+      jobId: "fmp4-job",
+      blobUrl: "blob:https://elolms.ou.edu.vn/video",
+      filename: "OU Yeah!/course/video.mp4"
+    })
+  `, context)
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(downloaded[0].filename, "OU Yeah!/course/video.mp4")
+  assert.equal(progress.find((message) => message.status === "complete")?.filename, "OU Yeah!/course/video.mp4")
+})
+
 test("background places unified AI files under the course tree", async () => {
   const source = await readFile(new URL("../src/background.js", import.meta.url), "utf8")
   let runtimeListener = null
@@ -474,9 +571,14 @@ test("background compacts long course paths without losing the file extension", 
     "Video Hướng dẫn đăng nhập email do Nhà trường cung cấp.mp4"
   ].join("/"))`, context)
 
-  assert.ok(result.length <= 180, `path length was ${result.length}`)
+  assert.ok(result.length <= 200, `path length was ${result.length}`)
   assert.match(result, /\.mp4$/)
   assert.ok(result.startsWith("OU Yeah!/"))
+  assert.doesNotMatch(result, /\/path~/)
+  assert.match(result, /\/CHƯƠNG/)
+  assert.match(result, /\/Chủ đề/)
+  assert.match(result, /\/Hướng/)
+  assert.match(result, /\/Phần/)
 
   const fullNames = vm.runInContext(`sanitizeDownloadPath([
     "OU Yeah!",
@@ -488,11 +590,69 @@ test("background compacts long course paths without losing the file extension", 
     "21-Hoạt động 21",
     "activity.json"
   ].join("/"))`, context)
-  assert.ok(fullNames.length <= 180, `full-name path length was ${fullNames.length}`)
+  assert.ok(fullNames.length <= 200, `full-name path length was ${fullNames.length}`)
   assert.match(fullNames, /^OU Yeah!\/Lập trình hướng đối tượng - 2531\//)
-  assert.match(fullNames, /CHƯƠNG 1 - TỔNG QUAN LẬP TRÌNH HƯỚNG ĐỐI TƯỢNG/)
-  assert.match(fullNames, /Chủ đề 1\.2 - Các đặc điểm của lập trình hướng đối tượng/)
+  assert.doesNotMatch(fullNames, /-ou-yeah-id/)
+  assert.doesNotMatch(fullNames, /\/path~/)
+  assert.match(fullNames, /activity\.json$/)
   assert.doesNotMatch(vm.runInContext(`sanitizeDownloadPath("OU Yeah!/Course/CON/..")`, context), /\/CON\//i)
+
+  const chapterName = "CHƯƠNG 2 - QUY ĐỊNH VÀ QUY TRÌNH HỌC TẬP TRỰC TUYẾN CỦA TRƯỜNG ĐẠI HỌC MỞ THÀNH PHỐ HỒ CHÍ MINH"
+  const readableChapterPath = vm.runInContext(`sanitizeDownloadPath(${JSON.stringify(`OU Yeah!/Kỹ năng học tập - 2531/${chapterName}/Chủ đề 1 - Quy định về học tập trực tuyến/[Tải về] Script Chương 2 - Chủ đề 1.pdf`)})`, context)
+  const readableChapterSibling = vm.runInContext(`sanitizeDownloadPath(${JSON.stringify(`OU Yeah!/Kỹ năng học tập - 2531/${chapterName}/Chủ đề 1 - Quy định về học tập trực tuyến/note.md`)})`, context)
+  assert.ok(readableChapterPath.length <= 200)
+  assert.match(readableChapterPath.split("/")[2], /^CHƯƠNG 2/)
+  assert.match(readableChapterPath.split("/")[3], /^Chủ đề 1/)
+  assert.doesNotMatch(readableChapterPath, /\/path~/)
+  assert.equal(readableChapterPath.slice(0, readableChapterPath.lastIndexOf("/")), readableChapterSibling.slice(0, readableChapterSibling.lastIndexOf("/")))
+
+  const reservedLeaf = vm.runInContext(`sanitizeDownloadPath([
+    "OU Yeah!",
+    "Kỹ năng học tập - 2531",
+    "00-AI",
+    "01-content",
+    "CHƯƠNG MỞ ĐẦU- HƯỚNG DẪN SỬ DỤNG HỆ THỐNG QUẢN LÝ HỌC TẬP VÀ GIỚI THIỆU MÔN HỌC",
+    "Chủ đề 2- Giới thiệu môn học",
+    "27-Hoạt động 27",
+    "content.md"
+  ].join("/"))`, context)
+  assert.ok(reservedLeaf.length <= 200)
+  assert.match(reservedLeaf, /content\.md$/)
+  assert.doesNotMatch(reservedLeaf, /\/(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|\/|$)/i)
+  const siblingLeaf = vm.runInContext(`sanitizeDownloadPath([
+    "OU Yeah!",
+    "Kỹ năng học tập - 2531",
+    "00-AI",
+    "01-content",
+    "CHƯƠNG MỞ ĐẦU- HƯỚNG DẪN SỬ DỤNG HỆ THỐNG QUẢN LÝ HỌC TẬP VÀ GIỚI THIỆU MÔN HỌC",
+    "Chủ đề 2- Giới thiệu môn học",
+    "27-Hoạt động 27",
+    "activity.json"
+  ].join("/"))`, context)
+  assert.equal(reservedLeaf.slice(0, reservedLeaf.lastIndexOf("/")), siblingLeaf.slice(0, siblingLeaf.lastIndexOf("/")))
+
+  const collisionA = vm.runInContext(`sanitizeDownloadPath("OU Yeah!/Kỹ năng học tập - 2531/00-AI/01-content/CHƯƠNG MỞ ĐẦU- HƯỚNG DẪN SỬ DỤNG HỆ THỐNG QUẢN LÝ HỌC TẬP VÀ GIỚI THIỆU MÔN HỌC/Chủ đề 1- Hướng dẫn sử dụng hệ thống quản lý học tập/Hướng dẫn sử dụng các hệ thống hỗ trợ học tập trực tuyến/Phần 1- Hướng dẫn đăng nhập email do Nhà trường cung cấp/22-Hướng dẫn đăng nhập email do Nhà trường cung cấp/activity.json")`, context)
+  const collisionB = vm.runInContext(`sanitizeDownloadPath("OU Yeah!/Kỹ năng học tập - 2531/00-AI/01-content/CHƯƠNG MỞ ĐẦU- HƯỚNG DẪN SỬ DỤNG HỆ THỐNG QUẢN LÝ HỌC TẬP VÀ GIỚI THIỆU MÔN HỌC/Chủ đề 1- Hướng dẫn sử dụng hệ thống quản lý học tập/Hướng dẫn sử dụng các hệ thống hỗ trợ học tập trực tuyến/Phần 2- Hướng dẫn sử dụng Tin nhắn trên Hệ thống ELOLMS/24-Hướng dẫn sử dụng Tin nhắn trên Hệ thống ELOLMS/activity.json")`, context)
+  assert.equal(collisionA.split("/")[2], "00-AI")
+  assert.doesNotMatch(collisionA, /-ou-yeah-id/)
+  assert.doesNotMatch(collisionB, /-ou-yeah-id/)
+  assert.notEqual(collisionA.toLowerCase(), collisionB.toLowerCase())
+
+  for (let depth = 1; depth <= 8; depth += 1) {
+    const deepPath = [
+      "OU Yeah!",
+      "Khóa học có tên rất dài cần được giữ dễ nhận biết - 2531",
+      ...Array.from({ length: depth }, (_, index) => `Cấp ${index + 1} - Tên thư mục rất dài nhưng vẫn phải còn phần đầu dễ đọc`),
+      "Tài liệu học tập có tên rất dài cần giữ đúng phần mở rộng.mp4"
+    ].join("/")
+    const compacted = vm.runInContext(`sanitizeDownloadPath(${JSON.stringify(deepPath)})`, context)
+    assert.ok(compacted.length <= 200, `depth ${depth} path length was ${compacted.length}`)
+    assert.doesNotMatch(compacted, /\/path~/)
+    assert.match(compacted, /\.mp4$/)
+    compacted.split("/").slice(2, -1).forEach((segment, index) => {
+      assert.match(segment, /^C/)
+    })
+  }
 })
 
 test("notification wheel fallback scrolls the document before Moodle handlers", async () => {
@@ -579,6 +739,7 @@ test("deadline page renders cached data first and refreshes volatile state in th
   assert.match(source, /refreshDeadlineDashboard\(dashboard, state\.nativeEvents, true\)/)
   assert.match(source, /metadata\.successfulSources === metadata\.totalSources/)
   assert.match(source, /Đồng bộ chưa hoàn tất/)
+  assert.match(source, /ou-deadline-pair \.ou-deadline-row\.ou-deadline-row-due-soon:hover/)
   assert.doesNotMatch(source, /Promise\.all\(courseUrls\.map/)
 })
 
@@ -985,6 +1146,7 @@ test("course downloader scopes unlocked Video, Slide and Script resources into a
   assert.match(source, /manifestFilename/)
   assert.match(source, /instructionsForAgents/)
   assert.match(source, /courseBatch: true/)
+  assert.match(source, /syncResourcePathFromDownload\(resource, result\.filename\)/)
   assert.match(source, /Sẽ tạm dừng sau tệp hiện tại/)
   assert.match(source, /discoverStaticVideoCandidates/)
   assert.doesNotMatch(source, /fetch\(embedUrl/)
@@ -993,10 +1155,17 @@ test("course downloader scopes unlocked Video, Slide and Script resources into a
   assert.match(content, /scheduleVimeoCandidateRegistration/)
   assert.match(background, /ou-yeah-register-media-candidates/)
   assert.match(background, /isVimeoSender/)
-  assert.match(source, /compactPathSegments\(segments, 180\)/)
+  assert.match(source, /DOWNLOAD_RELATIVE_PATH_MAX = 200/)
+  assert.match(source, /MATERIAL_TITLE_PREFIX_RE/)
+  assert.match(source, /function materialFilenameStem\(resource\)/)
   assert.match(source, /function compactSectionDirectory\(title\)/)
-  assert.match(source, /function compactSectionDirectory\(title\)\s*\{\s*return sanitizeSegment\(title, 120\)/)
-  assert.match(source, /sanitizeSegment\(course\.title, 120\)/)
+  assert.match(source, /CHỦ ĐỀ\\s\+\\d\+/)
+  assert.match(source, /PHẦN\\s\+\\d\+/)
+  assert.match(source, /const key = `\$\{downloadDirectory\}\/\$\{baseTitle\}\/\$\{resource\.type\}\//)
+  assert.match(source, /sanitizeSegment\(course\.title, COURSE_FOLDER_MAX_LENGTH\)/)
+  assert.doesNotMatch(source, /function allocateReadablePathLengths/)
+  assert.doesNotMatch(source, /ou-yeah-id/)
+  assert.doesNotMatch(source, /`path~\$\{/)
   assert.match(source, /const sectionDirectories = new Map\(\)/)
   assert.doesNotMatch(source, /return `\$\{segment\.slice\(0, available\)\.trimEnd\(\)\}…\$\{extension\}`/)
   assert.match(source, /failedResourcesMarkup/)
@@ -1004,8 +1173,9 @@ test("course downloader scopes unlocked Video, Slide and Script resources into a
   assert.match(background, /isHttpsElolmsUrl\(url\)/)
   assert.match(background, /url\.protocol === "https:" && url\.hostname === "elolms\.ou\.edu\.vn"/)
   assert.match(background, /sanitizeDownloadPath/)
-  assert.match(background, /compactDownloadPath\(segments, 180\)/)
+  assert.match(background, /DOWNLOAD_RELATIVE_PATH_MAX = 200/)
   assert.match(background, /hlsSaveRetries/)
+  assert.match(background, /filename: message\.filename/)
   assert.match(background, /FILE_TRANSIENT_ERROR/)
   assert.match(background, /trackedDirectDownload/)
 })
@@ -1055,7 +1225,10 @@ test("course data exporter writes one access-aware AI tree beside the full-cours
   assert.match(source, /ou-yeah-course-data-groups\{align-items:stretch\}/)
   assert.match(source, /const DISPLAY_GROUPS = GROUPS\.reduce/)
   assert.match(source, /DISPLAY_GROUPS\.map/)
-  assert.match(source, /return `OU Yeah!\/\$\{sanitizeSegment\(course\.title, 120\)\}`/)
+  assert.match(source, /return `OU Yeah!\/\$\{sanitizeSegment\(course\.title, COURSE_FOLDER_MAX_LENGTH\)\}`/)
+  assert.match(source, /COURSE_DATA_RELATIVE_PATH_MAX = 200/)
+  assert.match(source, /function compactArchivePath/)
+  assert.doesNotMatch(source, /readableArchiveId/)
   assert.match(source, /max-height:none/)
   assert.doesNotMatch(source, /ou-yeah-course-data-warning/)
   assert.doesNotMatch(source, /data-ou-data-sensitive-consent/)
@@ -1139,6 +1312,8 @@ test("course data exporter writes one access-aware AI tree beside the full-cours
   assert.match(courseDownloadSource, /setCourseDataSummary\(summary = null\)/)
   assert.match(courseDownloadSource, /setCourseDataPanel\(summary = null, actions = \{\}\)/)
   assert.match(courseDownloadSource, /clearCourseDataPanel\(\)/)
+  assert.match(courseDownloadSource, /actions\.onReload/)
+  assert.match(courseDownloadSource, /data-ou-course-data-reload/)
   assert.match(source, /materialApi\?\.setCourseDataPanel/)
   assert.match(source, /materialApi\?\.clearCourseDataPanel/)
   assert.match(source, /renderCompatCourseDataPanel/)
@@ -1146,6 +1321,18 @@ test("course data exporter writes one access-aware AI tree beside the full-cours
   assert.match(source, /unifiedRoot\?\.dataset\.mode === "course-data"/)
   assert.match(source, /materialApi\.clearCourseDataPanel\?\.\(\)\s+unifiedRoot\?\.remove\(\)\s+renderCompatCourseDataPanel/)
   assert.match(source, /const terminalStatus = \["complete", "canceled", "error", "interrupted"\]/)
+  assert.match(source, /let extensionContextInvalidated = false/)
+  assert.match(source, /function isExtensionContextAvailable\(\)/)
+  assert.match(source, /function isExtensionContextError\(error\)/)
+  assert.match(source, /if \(isExtensionContextError\(error\)\)/)
+  assert.match(source, /if \(extensionContextInvalidated\) return/)
+  assert.match(source, /activeSession\.status = "context-invalidated"/)
+  assert.match(source, /onReload: \(\) => location\.reload\(\)/)
+  assert.match(source, /data-ou-course-data-reload/)
+  assert.ok(
+    source.indexOf("if (isExtensionContextError(error))") < source.indexOf('console.warn("OU Yeah!: course data export failed"'),
+    "an expected extension reload must be handled before it is logged as an extension error"
+  )
   assert.match(source, /activeSession\.status === "running" \? \{ onPause, onCancel \}/)
   assert.match(source, /activeSession\.status === "paused" \? \{ onResume, onCancel \}/)
   assert.match(source, /setCourseDataBusy\(true\)\s+renderPanel\(\)\s+await persistSession/)
@@ -1169,6 +1356,51 @@ test("course data exporter writes one access-aware AI tree beside the full-cours
   assert.match(forumSource, /OUYeahForumExportApi/)
   assert.match(courseDownloadSource, /OUYeahCourseDownloadApi/)
   assert.match(courseDownloadSource, /isBusy\(\)/)
+})
+
+test("course data exporter keeps long AI paths valid, unique and sibling-stable", async () => {
+  const source = await readFile(new URL("../src/course-data-export.js", import.meta.url), "utf8")
+  const helperStart = source.indexOf("  function normalizeArchivePath")
+  const helperEnd = source.indexOf("  function stripTrailingExtension", helperStart)
+  const helperSource = source.slice(helperStart, helperEnd)
+  const context = vm.createContext({ COURSE_DATA_RELATIVE_PATH_MAX: 200, COURSE_DATA_LEAF_LENGTH_BUDGET: 24 })
+
+  vm.runInContext(`${helperSource}
+    function cleanText(value) {
+      return String(value || "").replace(/[\\u200b-\\u200d\\ufeff]/g, "").replace(/\\s+/g, " ").trim()
+    }
+  `, context)
+
+  const commonDirectory = "01-content/CHƯƠNG MỞ ĐẦU- HƯỚNG DẪN SỬ DỤNG HỆ THỐNG QUẢN LÝ HỌC TẬP VÀ GIỚI THIỆU MÔN HỌC/Chủ đề 1- Hướng dẫn sử dụng hệ thống quản lý học tập/Hướng dẫn sử dụng các hệ thống hỗ trợ học tập trực tuyến/Phần 1- Hướng dẫn đăng nhập email do Nhà trường cung cấp/22-Hướng dẫn đăng nhập email do Nhà trường cung cấp"
+  const contentPath = vm.runInContext(`normalizeArchivePath(${JSON.stringify(`${commonDirectory}/content.md`)})`, context)
+  const activityPath = vm.runInContext(`normalizeArchivePath(${JSON.stringify(`${commonDirectory}/activity.json`)})`, context)
+  const otherPath = vm.runInContext(`normalizeArchivePath(${JSON.stringify(`${commonDirectory.replace("Phần 1- Hướng dẫn đăng nhập email do Nhà trường cung cấp", "Phần 2- Hướng dẫn sử dụng Tin nhắn trên Hệ thống ELOLMS")}/activity.json`)})`, context)
+
+  assert.ok(contentPath.length <= 200)
+  assert.ok(activityPath.length <= 200)
+  assert.match(contentPath, /content\.md$/)
+  assert.match(contentPath, /^01-content\/CHƯƠNG/)
+  assert.match(contentPath, /\/Chủ/)
+  assert.match(contentPath, /\/Hướng/)
+  assert.match(contentPath, /\/Phần/)
+  assert.doesNotMatch(contentPath, /\/path~/)
+  assert.doesNotMatch(source, /`path~\$\{/)
+  assert.doesNotMatch(source, /readableArchiveId/)
+  assert.doesNotMatch(contentPath, /\/(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|\/|$)/i)
+  assert.equal(contentPath.slice(0, contentPath.lastIndexOf("/")), activityPath.slice(0, activityPath.lastIndexOf("/")))
+  assert.notEqual(activityPath.toLowerCase(), otherPath.toLowerCase())
+
+  const deepArchivePath = vm.runInContext(`normalizeArchivePath(${JSON.stringify([
+    "01-content",
+    ...Array.from({ length: 5 }, (_, index) => `Cấp ${index + 1} - Thư mục dữ liệu rất dài cần giữ phần đầu`),
+    "activity.json"
+  ].join("/"))})`, context)
+  assert.ok(deepArchivePath.length <= 200)
+  assert.doesNotMatch(deepArchivePath, /\/path~/)
+  assert.match(deepArchivePath, /activity\.json$/)
+  deepArchivePath.split("/").slice(1, -1).forEach((segment, index) => {
+    assert.match(segment, /^Cấp/)
+  })
 })
 
 test("forum exporter writes Markdown, JSON and local images into a real ZIP layout", async () => {

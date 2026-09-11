@@ -1768,6 +1768,7 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-due-soon { border-color: #efd08b; background: linear-gradient(110deg, #fffaf0, #fff); box-shadow: inset 3px 0 0 #e4a62a, 0 5px 16px rgba(184, 126, 15, .08); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-due-soon { background: linear-gradient(110deg, #fffaf0, #fff); box-shadow: inset 3px 0 0 #e4a62a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-due-soon:hover { border-color: #e5b64e; background: #fff8e8; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-due-soon:hover { border-color: transparent; background: #fff8e8; box-shadow: inset 3px 0 0 #e4a62a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-due-soon .ou-deadline-date strong { color: #b77700; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-completed .ou-deadline-content h3 { text-decoration: line-through; text-decoration-color: rgba(82, 105, 199, .6); text-decoration-thickness: 1px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check { display: inline-grid; width: 22px; height: 22px; place-items: center; cursor: default; }

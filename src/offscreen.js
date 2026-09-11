@@ -528,8 +528,13 @@ function resolveUrl(value, baseUrl) {
 
 function ensureExtension(filename, extension) {
   const cleaned = String(filename || "ou-yeah-video").replace(/\.(m3u8|mpd)$/i, "")
-  if (/\.(mp4|m4v|webm|mov|mkv|ts)$/i.test(cleaned)) return cleaned
-  return `${cleaned}${extension || ".ts"}`
+  const preferredExtension = /^\.[a-z0-9]{2,5}$/i.test(String(extension || ""))
+    ? String(extension).toLowerCase()
+    : ".ts"
+  const currentExtension = /\.(mp4|m4v|webm|mov|mkv|ts)$/i.exec(cleaned)?.[0] || ""
+  if (!currentExtension) return `${cleaned}${preferredExtension}`
+  if (currentExtension.toLowerCase() === preferredExtension) return cleaned
+  return `${cleaned.slice(0, -currentExtension.length)}${preferredExtension}`
 }
 
 function sendProgress(jobId, status, label, percent, loaded, total) {
