@@ -561,6 +561,27 @@ test("deadline page hides only the requested native calendar controls", async ()
   assert.doesNotMatch(controlCode, /querySelectorAll\("img"\)|backgroundImage|hideNativeCalendarBanner/)
 })
 
+test("deadline page renders cached data first and refreshes volatile state in the background", async () => {
+  const source = await readFile(new URL("../src/deadlines.js", import.meta.url), "utf8")
+  const dashboardCreation = source.indexOf("const dashboard = createDeadlineDashboard(nativeEvents)")
+  const backgroundRefresh = source.indexOf("refreshDeadlineDashboard(dashboard, nativeEvents)")
+
+  assert.ok(dashboardCreation >= 0 && backgroundRefresh > dashboardCreation)
+  assert.match(source, /chrome\.storage\.local\.get/)
+  assert.match(source, /chrome\.storage\.local\.set/)
+  assert.match(source, /DEADLINE_METADATA_TTL = 30 \* 60 \* 1000/)
+  assert.match(source, /COMPLETED_STATUS_TTL = 7 \* 24 \* 60 \* 60 \* 1000/)
+  assert.match(source, /DUE_SOON_STATUS_TTL = 5 \* 60 \* 1000/)
+  assert.match(source, /mapWithConcurrency\(courseUrls, REQUEST_CONCURRENCY/)
+  assert.match(source, /offset \+= FORUM_DISCUSSION_CONCURRENCY/)
+  assert.match(source, /if \(matches\.some\(Boolean\)\) return true/)
+  assert.match(source, /data-ou-deadline-refresh/)
+  assert.match(source, /refreshDeadlineDashboard\(dashboard, state\.nativeEvents, true\)/)
+  assert.match(source, /metadata\.successfulSources === metadata\.totalSources/)
+  assert.match(source, /Đồng bộ chưa hoàn tất/)
+  assert.doesNotMatch(source, /Promise\.all\(courseUrls\.map/)
+})
+
 test("ELOLMS times are normalized to 24-hour format across dynamic page content", async () => {
   const source = await readFile(new URL("../src/time-format.js", import.meta.url), "utf8")
   const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"))

@@ -9,6 +9,18 @@
   const DEADLINE_DASHBOARD_ID = "ou-yeah-deadline-dashboard"
   const DEADLINE_LOADING_ID = "ou-yeah-deadline-loading"
   const DEADLINE_STYLE_ID = "ou-yeah-deadline-theme"
+  const DEADLINE_CACHE_PREFIX = "ouYeahDeadlineCacheV1"
+  const DEADLINE_CACHE_VERSION = 1
+  const DEADLINE_CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000
+  const DEADLINE_METADATA_TTL = 30 * 60 * 1000
+  const COURSE_INDEX_TTL = 12 * 60 * 60 * 1000
+  const COMPLETED_STATUS_TTL = 7 * 24 * 60 * 60 * 1000
+  const PENDING_STATUS_TTL = 30 * 60 * 1000
+  const DUE_SOON_STATUS_TTL = 5 * 60 * 1000
+  const OVERDUE_FORUM_STATUS_TTL = 15 * 60 * 1000
+  const OVERDUE_ACTIVITY_STATUS_TTL = 24 * 60 * 60 * 1000
+  const REQUEST_CONCURRENCY = 4
+  const FORUM_DISCUSSION_CONCURRENCY = 3
   const BRAND = "#5269c7"
 
   if (location.hostname !== ELOLMS_HOST || window.top !== window.self) return
@@ -17,6 +29,7 @@
   let currentUserNamePromise = null
   const forumCompletionCache = new Map()
   const activityCompletionCache = new Map()
+  const deadlineDashboardStates = new WeakMap()
 
   injectDeadlineTheme()
   if (isDeadlineView()) showDeadlineLoading()
@@ -128,37 +141,23 @@
       .filter((event) => event)
       .sort(compareEvents)
 
-    loadDeadlineEvents().then((courseEvents) => {
-      const events = mergeEvents(courseEvents || [], nativeEvents)
-      const dashboard = createDeadlineDashboard(events)
-      const nativeList = findEventList(region, eventItems)
-      if (nativeList instanceof HTMLElement) {
-        nativeList.hidden = true
-        nativeList.insertAdjacentElement("beforebegin", dashboard)
-      } else {
-        region.append(dashboard)
-      }
+    const dashboard = createDeadlineDashboard(nativeEvents)
+    const nativeList = findEventList(region, eventItems)
+    if (nativeList instanceof HTMLElement) {
+      nativeList.hidden = true
+      nativeList.insertAdjacentElement("beforebegin", dashboard)
+    } else {
+      region.append(dashboard)
+    }
 
-      hideNativeCalendarControls(region)
-      eventItems.forEach((item) => {
-        if (item instanceof HTMLElement) item.hidden = true
-      })
-      hideDeadlineLoading()
-    }).catch(() => {
-      const dashboard = createDeadlineDashboard(nativeEvents)
-      const nativeList = findEventList(region, eventItems)
-      if (nativeList instanceof HTMLElement) {
-        nativeList.hidden = true
-        nativeList.insertAdjacentElement("beforebegin", dashboard)
-      } else {
-        region.append(dashboard)
-      }
-
-      hideNativeCalendarControls(region)
-      eventItems.forEach((item) => {
-        if (item instanceof HTMLElement) item.hidden = true
-      })
-      hideDeadlineLoading()
+    hideNativeCalendarControls(region)
+    eventItems.forEach((item) => {
+      if (item instanceof HTMLElement) item.hidden = true
+    })
+    hideDeadlineLoading()
+    setDeadlineSyncStatus(dashboard, "Đang đọc dữ liệu đã lưu...")
+    refreshDeadlineDashboard(dashboard, nativeEvents).catch(() => {
+      setDeadlineSyncStatus(dashboard, "Không thể đồng bộ lúc này · đang hiển thị dữ liệu gần nhất")
     })
   }
 
@@ -228,21 +227,107 @@
     document.documentElement?.classList.remove("ou-yeah-deadline-loading")
   }
 
-  async function loadDeadlineEvents() {
-    const courseUrls = await discoverCourseUrls()
-    const [results, currentMonthEvents] = await Promise.all([
-      Promise.all(courseUrls.map((courseUrl) => fetchCourseDeadlines(courseUrl))),
-      fetchCalendarEventsForMonth(new Date())
+  async function refreshDeadlineDashboard(dashboard, nativeEvents, forceMetadata = false) {
+    const state = deadlineDashboardStates.get(dashboard)
+    if (!state || state.isSyncing) return
+    state.isSyncing = true
+    setDeadlineRefreshBusy(dashboard, true)
+    try {
+      await synchronizeDeadlineDashboard(dashboard, nativeEvents, forceMetadata)
+    } finally {
+      state.isSyncing = false
+      setDeadlineRefreshBusy(dashboard, false)
+    }
+  }
+
+  async function synchronizeDeadlineDashboard(dashboard, nativeEvents, forceMetadata) {
+    const cache = await readDeadlineCache()
+    const cachedEvents = cache.events
+    let events = applyCachedCompletion(mergeEvents(cachedEvents, nativeEvents), cachedEvents)
+    let metadataUpdatedAt = cache.metadataUpdatedAt
+    let courseUrls = cache.courseUrls
+    let courseUrlsUpdatedAt = cache.courseUrlsUpdatedAt
+    let metadataFullyUpdated = true
+    let latestSavedAt = cache.savedAt
+
+    if (events.length) {
+      updateDeadlineDashboardEvents(dashboard, events)
+      if (cache.savedAt) {
+        setDeadlineSyncStatus(dashboard, `Đang dùng dữ liệu đã lưu lúc ${formatDeadlineSyncTime(cache.savedAt)} · kiểm tra thay đổi trong nền...`)
+      }
+    }
+
+    const metadataIsFresh = !forceMetadata
+      && metadataUpdatedAt > 0
+      && Date.now() - metadataUpdatedAt < DEADLINE_METADATA_TTL
+
+    if (!metadataIsFresh) {
+      setDeadlineSyncStatus(dashboard, "Đang cập nhật lịch và deadline mới...")
+      const metadata = await fetchDeadlineMetadata(cache, (partialEvents, completedSources, totalSources) => {
+        const preview = applyCachedCompletion(
+          mergeEvents(partialEvents, mergeEvents(cachedEvents, nativeEvents)),
+          cachedEvents
+        )
+        updateDeadlineDashboardEvents(dashboard, preview)
+        setDeadlineSyncStatus(dashboard, `Đang cập nhật dữ liệu ${completedSources}/${totalSources}...`)
+      })
+      courseUrls = metadata.courseUrls
+      courseUrlsUpdatedAt = metadata.courseUrlsUpdatedAt
+      metadataFullyUpdated = metadata.courseIndexSucceeded
+        && metadata.successfulSources === metadata.totalSources
+      if (metadataFullyUpdated) metadataUpdatedAt = Date.now()
+      const metadataFallback = metadataFullyUpdated ? nativeEvents : mergeEvents(cachedEvents, nativeEvents)
+      events = applyCachedCompletion(mergeEvents(metadata.events, metadataFallback), cachedEvents)
+      updateDeadlineDashboardEvents(dashboard, events)
+      latestSavedAt = await writeDeadlineCache({ events, metadataUpdatedAt, courseUrls, courseUrlsUpdatedAt })
+    }
+
+    const staleStatusCount = countStaleCompletionChecks(events)
+    if (staleStatusCount > 0) {
+      setDeadlineSyncStatus(dashboard, `Đang kiểm tra trạng thái hoàn thành 0/${staleStatusCount}...`)
+      await refreshActivityCompletion(events, (completedChecks, totalChecks) => {
+        updateDeadlineDashboardEvents(dashboard, events)
+        setDeadlineSyncStatus(dashboard, `Đang kiểm tra trạng thái hoàn thành ${completedChecks}/${totalChecks}...`)
+      })
+      latestSavedAt = await writeDeadlineCache({ events, metadataUpdatedAt, courseUrls, courseUrlsUpdatedAt })
+    }
+
+    updateDeadlineDashboardEvents(dashboard, events)
+    setDeadlineSyncStatus(dashboard, metadataFullyUpdated
+      ? `Đã đồng bộ lúc ${formatDeadlineSyncTime(latestSavedAt || Date.now())}`
+      : `Đồng bộ chưa hoàn tất lúc ${formatDeadlineSyncTime(latestSavedAt || Date.now())} · đang giữ dữ liệu gần nhất`)
+  }
+
+  async function fetchDeadlineMetadata(cache, onProgress) {
+    const courseIndex = await discoverCourseUrls(cache.courseUrls, cache.courseUrlsUpdatedAt)
+    const courseUrls = courseIndex.urls
+    const totalSources = courseUrls.length + 1
+    let completedSources = 0
+    let successfulSources = 0
+    let events = []
+
+    const collect = (result) => {
+      events = mergeEvents(events, result.events)
+      if (result.succeeded) successfulSources += 1
+      completedSources += 1
+      onProgress?.(events, completedSources, totalSources)
+    }
+
+    await Promise.all([
+      mapWithConcurrency(courseUrls, REQUEST_CONCURRENCY, async (courseUrl) => {
+        collect(await fetchCourseDeadlineSource(courseUrl))
+      }),
+      fetchCalendarEventSource(new Date()).then(collect)
     ])
-    const unique = new Map()
 
-    results.flat().forEach((event) => {
-      if (!(event?.date instanceof Date)) return
-      const key = `${event.href}|${event.date.getTime()}|${event.title}`
-      unique.set(key, event)
-    })
-
-    return mergeEvents(Array.from(unique.values()), currentMonthEvents)
+    return {
+      events,
+      courseUrls,
+      courseUrlsUpdatedAt: courseIndex.updatedAt,
+      courseIndexSucceeded: courseIndex.succeeded,
+      successfulSources,
+      totalSources
+    }
   }
 
   function mergeEvents(courseEvents, nativeEvents) {
@@ -257,22 +342,243 @@
     return Array.from(unique.values()).sort(compareEvents)
   }
 
-  async function discoverCourseUrls() {
-    const urls = new Set()
+  async function discoverCourseUrls(cachedUrls = [], cachedAt = 0) {
+    const urls = new Set(cachedUrls.filter((value) => isSameOriginCourseUrl(value)))
+    let updatedAt = cachedAt
     collectCourseUrlsFromDocument(document, urls)
 
+    if (urls.size && cachedAt > 0 && Date.now() - cachedAt < COURSE_INDEX_TTL) {
+      return { urls: Array.from(urls), updatedAt: cachedAt, succeeded: true }
+    }
+
+    let succeeded = false
     try {
       const response = await fetch(`${location.origin}/my/`, { credentials: "include" })
       if (response.ok) {
         const html = await response.text()
         const doc = new DOMParser().parseFromString(html, "text/html")
         collectCourseUrlsFromDocument(doc, urls)
+        updatedAt = Date.now()
+        succeeded = true
       }
     } catch {
       // The visible calendar events remain a safe fallback when the course index cannot load.
     }
 
-    return Array.from(urls)
+    return { urls: Array.from(urls), updatedAt, succeeded }
+  }
+
+  function isSameOriginCourseUrl(value) {
+    try {
+      const url = new URL(value, location.origin)
+      return url.origin === location.origin
+        && url.pathname.toLowerCase() === "/course/view.php"
+        && Boolean(url.searchParams.get("id"))
+    } catch {
+      return false
+    }
+  }
+
+  function emptyDeadlineCache() {
+    return {
+      events: [],
+      metadataUpdatedAt: 0,
+      courseUrls: [],
+      courseUrlsUpdatedAt: 0,
+      savedAt: 0
+    }
+  }
+
+  async function readDeadlineCache() {
+    const cached = await deadlineStorageGet(deadlineCacheStorageKey())
+    if (!cached || cached.version !== DEADLINE_CACHE_VERSION) return emptyDeadlineCache()
+
+    const savedAt = Number(cached.savedAt) || 0
+    if (!savedAt || Date.now() - savedAt > DEADLINE_CACHE_MAX_AGE) return emptyDeadlineCache()
+
+    return {
+      events: deserializeDeadlineEvents(cached.events),
+      metadataUpdatedAt: Number(cached.metadataUpdatedAt) || 0,
+      courseUrls: Array.isArray(cached.courseUrls)
+        ? cached.courseUrls.filter((value) => isSameOriginCourseUrl(value))
+        : [],
+      courseUrlsUpdatedAt: Number(cached.courseUrlsUpdatedAt) || 0,
+      savedAt
+    }
+  }
+
+  async function writeDeadlineCache({ events, metadataUpdatedAt, courseUrls, courseUrlsUpdatedAt }) {
+    const savedAt = Date.now()
+    await deadlineStorageSet({
+      [deadlineCacheStorageKey()]: {
+        version: DEADLINE_CACHE_VERSION,
+        savedAt,
+        metadataUpdatedAt: Number(metadataUpdatedAt) || 0,
+        courseUrlsUpdatedAt: Number(courseUrlsUpdatedAt) || 0,
+        courseUrls: Array.from(new Set((courseUrls || []).filter((value) => isSameOriginCourseUrl(value)))),
+        events: serializeDeadlineEvents(events)
+      }
+    })
+    return savedAt
+  }
+
+  function deadlineCacheStorageKey() {
+    const userMenu = document.querySelector(".usermenu, [data-region='user-menu'], .userbutton")
+    const profileLink = userMenu?.querySelector('a[href*="/user/profile.php"], a[href*="/user/view.php"]')
+    let profileId
+    try {
+      profileId = profileLink instanceof HTMLAnchorElement
+        ? new URL(profileLink.href, location.origin).searchParams.get("id") || ""
+        : ""
+    } catch {
+      profileId = ""
+    }
+    const avatar = userMenu?.querySelector("img[alt]")
+    const visibleIdentity = cleanText(
+      userMenu?.querySelector(".usertext, .user-name, [data-region='user-menu-toggle']")?.textContent
+      || avatar?.getAttribute("alt")
+      || "active-session"
+    )
+    return `${DEADLINE_CACHE_PREFIX}:${hashText(`${location.origin}|${profileId}|${visibleIdentity}`)}`
+  }
+
+  function serializeDeadlineEvents(events) {
+    return mergeEvents(events || [], []).map((event) => ({
+      title: String(event.title || ""),
+      course: String(event.course || ""),
+      date: event.date.toISOString(),
+      href: String(event.href || ""),
+      kind: event.kind === "meeting" ? "meeting" : "deadline",
+      completed: event.completed === true,
+      completionCheckedAt: Number(event.completionCheckedAt) || 0
+    }))
+  }
+
+  function deserializeDeadlineEvents(values) {
+    if (!Array.isArray(values)) return []
+    return values.map((value) => {
+      const date = new Date(value?.date)
+      if (!value || !value.title || Number.isNaN(date.getTime())) return null
+      return {
+        title: String(value.title),
+        course: String(value.course || "Không rõ môn học"),
+        date,
+        dateLabel: formatDate(date),
+        time: formatTime(date),
+        href: String(value.href || ""),
+        kind: value.kind === "meeting" ? "meeting" : "deadline",
+        completed: value.completed === true,
+        completionCheckedAt: Number(value.completionCheckedAt) || 0,
+        source: null
+      }
+    }).filter(Boolean).sort(compareEvents)
+  }
+
+  function applyCachedCompletion(events, cachedEvents) {
+    const cachedByUrl = new Map()
+    cachedEvents.forEach((event) => {
+      if (!needsRemoteCompletionCheck(event.href)) return
+      const previous = cachedByUrl.get(event.href)
+      cachedByUrl.set(event.href, {
+        completed: previous?.completed === true || event.completed === true,
+        completionCheckedAt: Math.max(
+          Number(previous?.completionCheckedAt) || 0,
+          Number(event.completionCheckedAt) || 0
+        )
+      })
+    })
+
+    events.forEach((event) => {
+      if (!needsRemoteCompletionCheck(event.href)) return
+      const cached = cachedByUrl.get(event.href)
+      if (!cached) return
+      event.completed = event.completed === true || cached.completed === true
+      event.completionCheckedAt = Math.max(
+        Number(event.completionCheckedAt) || 0,
+        Number(cached.completionCheckedAt) || 0
+      )
+    })
+    return events
+  }
+
+  function countStaleCompletionChecks(events) {
+    return new Set(events
+      .filter((event) => shouldRefreshCompletion(event))
+      .map((event) => event.href)
+      .filter(Boolean)).size
+  }
+
+  function shouldRefreshCompletion(event) {
+    if (!needsRemoteCompletionCheck(event.href)) return false
+    const checkedAt = Number(event.completionCheckedAt) || 0
+    if (!checkedAt) return true
+    return Date.now() - checkedAt >= completionRefreshTtl(event)
+  }
+
+  function completionRefreshTtl(event) {
+    if (event.completed === true) return COMPLETED_STATUS_TTL
+    const remaining = event.date.getTime() - Date.now()
+    if (remaining < 0) {
+      return /\/mod\/forum\//i.test(event.href || "")
+        ? OVERDUE_FORUM_STATUS_TTL
+        : OVERDUE_ACTIVITY_STATUS_TTL
+    }
+    return remaining <= 3 * 24 * 60 * 60 * 1000
+      ? DUE_SOON_STATUS_TTL
+      : PENDING_STATUS_TTL
+  }
+
+  async function mapWithConcurrency(items, limit, mapper) {
+    const results = new Array(items.length)
+    let nextIndex = 0
+    const workerCount = Math.min(Math.max(1, limit), items.length)
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex
+        nextIndex += 1
+        results[index] = await mapper(items[index], index)
+      }
+    })
+    await Promise.all(workers)
+    return results
+  }
+
+  function deadlineStorageGet(key) {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(key, (result) => {
+          try {
+            if (chrome.runtime.lastError) resolve(null)
+            else resolve(result?.[key] || null)
+          } catch {
+            resolve(null)
+          }
+        })
+      } catch {
+        resolve(null)
+      }
+    })
+  }
+
+  function deadlineStorageSet(values) {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.set(values, () => {
+          try { void chrome.runtime.lastError } catch { /* Extension reload: cache is best-effort. */ }
+          resolve()
+        })
+      } catch {
+        resolve()
+      }
+    })
+  }
+
+  function formatDeadlineSyncTime(timestamp) {
+    return new Intl.DateTimeFormat("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(new Date(timestamp))
   }
 
   function collectCourseUrlsFromDocument(doc, urls) {
@@ -297,16 +603,15 @@
     })
   }
 
-  async function fetchCourseDeadlines(courseUrl) {
+  async function fetchCourseDeadlineSource(courseUrl) {
     try {
       const response = await fetch(courseUrl, { credentials: "include" })
-      if (!response.ok) return []
+      if (!response.ok) return { events: [], succeeded: false }
       const html = await response.text()
       const events = parseCourseDeadlines(html, courseUrl)
-      await enrichActivityCompletion(events)
-      return events
+      return { events, succeeded: true }
     } catch {
-      return []
+      return { events: [], succeeded: false }
     }
   }
 
@@ -327,31 +632,49 @@
   }
 
   async function enrichActivityCompletion(events) {
-    await enrichForumCompletion(events)
-
-    const submittedActivities = events.filter((event) => /\/mod\/(assign|quiz)\//i.test(event.href || ""))
-    await Promise.all(submittedActivities.map(async (event) => {
-      if (await checkActivitySubmission(event.href)) event.completed = true
-    }))
+    await refreshActivityCompletion(events)
   }
 
   function needsRemoteCompletionCheck(url) {
     return /\/mod\/(assign|quiz|forum)\//i.test(url || "")
   }
 
-  async function enrichForumCompletion(events) {
-    const forumEvents = events.filter((event) => /\/mod\/forum\//i.test(event.href || ""))
-    if (!forumEvents.length) return
-    const userName = await getCurrentUserName()
-    if (!userName) return
+  async function refreshActivityCompletion(events, onProgress) {
+    const staleUrls = new Set(events
+      .filter((event) => shouldRefreshCompletion(event))
+      .map((event) => event.href)
+      .filter(Boolean))
+    const groupedByUrl = new Map()
+    events.filter((event) => staleUrls.has(event.href)).forEach((event) => {
+      if (!groupedByUrl.has(event.href)) groupedByUrl.set(event.href, [])
+      groupedByUrl.get(event.href).push(event)
+    })
+    const groups = Array.from(groupedByUrl, ([href, matchingEvents]) => ({ href, events: matchingEvents }))
+    if (!groups.length) return 0
 
-    await Promise.all(forumEvents.map(async (event) => {
-      if (await checkForumParticipation(event.href, userName)) event.completed = true
-    }))
+    let completedChecks = 0
+
+    await mapWithConcurrency(groups, REQUEST_CONCURRENCY, async (group) => {
+      const isForum = /\/mod\/forum\//i.test(group.href)
+      const userName = isForum ? await getCurrentUserName() : ""
+      const completed = isForum
+        ? Boolean(userName) && await checkForumParticipation(group.href, userName, true)
+        : await checkActivitySubmission(group.href, true)
+      const checkedAt = Date.now()
+      group.events.forEach((event) => {
+        event.completed = event.completed === true || completed
+        event.completionCheckedAt = checkedAt
+      })
+      completedChecks += 1
+      onProgress?.(completedChecks, groups.length)
+    })
+
+    return groups.length
   }
 
-  function checkActivitySubmission(activityUrl) {
+  function checkActivitySubmission(activityUrl, force = false) {
     if (!activityUrl) return Promise.resolve(false)
+    if (force) activityCompletionCache.delete(activityUrl)
     if (activityCompletionCache.has(activityUrl)) return activityCompletionCache.get(activityUrl)
 
     const check = (async () => {
@@ -396,8 +719,9 @@
       && !/no attempts|chua co lan lam|attempts 0|0 attempts|so lan lam bai 0|lan lam bai 0/.test(normalizedText)
   }
 
-  function checkForumParticipation(forumUrl, userName) {
+  function checkForumParticipation(forumUrl, userName, force = false) {
     if (!forumUrl) return Promise.resolve(false)
+    if (force) forumCompletionCache.delete(forumUrl)
     if (forumCompletionCache.has(forumUrl)) return forumCompletionCache.get(forumUrl)
 
     const check = (async () => {
@@ -420,17 +744,23 @@
           .filter(Boolean)))
         if (!discussionUrls.length) return false
 
-        const discussionDocs = await Promise.all(discussionUrls.slice(0, 24).map(async (discussionUrl) => {
-          try {
-            const response = await fetch(discussionUrl, { credentials: "include" })
-            if (!response.ok) return null
-            return new DOMParser().parseFromString(await response.text(), "text/html")
-          } catch {
-            return null
-          }
-        }))
         const normalizedUserName = normalizeText(userName)
-        return discussionDocs.some((doc) => doc && forumDocumentHasVisiblePost(doc, normalizedUserName))
+        const limitedUrls = discussionUrls.slice(0, 24)
+        for (let offset = 0; offset < limitedUrls.length; offset += FORUM_DISCUSSION_CONCURRENCY) {
+          const batch = limitedUrls.slice(offset, offset + FORUM_DISCUSSION_CONCURRENCY)
+          const matches = await mapWithConcurrency(batch, FORUM_DISCUSSION_CONCURRENCY, async (discussionUrl) => {
+            try {
+              const response = await fetch(discussionUrl, { credentials: "include" })
+              if (!response.ok) return false
+              const doc = new DOMParser().parseFromString(await response.text(), "text/html")
+              return forumDocumentHasVisiblePost(doc, normalizedUserName)
+            } catch {
+              return false
+            }
+          })
+          if (matches.some(Boolean)) return true
+        }
+        return false
       } catch {
         return false
       }
@@ -451,20 +781,25 @@
     return normalizeText(doc.body?.textContent || "").includes(normalizedUserName)
   }
 
-  async function fetchCalendarEventsForMonth(monthDate) {
+  async function fetchCalendarEventsForMonth(monthDate, includeCompletion = true) {
+    const result = await fetchCalendarEventSource(monthDate)
+    if (includeCompletion) await enrichActivityCompletion(result.events)
+    return result.events
+  }
+
+  async function fetchCalendarEventSource(monthDate) {
     try {
       const url = new URL(CALENDAR_PATH, location.origin)
       url.searchParams.set("view", "month")
       url.searchParams.set("time", String(Math.floor(monthDate.getTime() / 1000)))
       const response = await fetch(url, { credentials: "include" })
-      if (!response.ok) return []
+      if (!response.ok) return { events: [], succeeded: false }
       const html = await response.text()
       const doc = new DOMParser().parseFromString(html, "text/html")
       const events = findEventItems(doc).map(extractEvent).filter((event) => event).sort(compareEvents)
-      await enrichActivityCompletion(events)
-      return events
+      return { events, succeeded: true }
     } catch {
-      return []
+      return { events: [], succeeded: false }
     }
   }
 
@@ -619,12 +954,15 @@
     dashboard.setAttribute("aria-labelledby", "ou-yeah-deadline-title")
     const state = {
       events: mergeEvents(events, []),
+      nativeEvents: mergeEvents(events, []),
       selectedMonth: getInitialMonth(events),
       selectedCourse: "",
       query: "",
       loadedMonths: new Set([monthKey(getInitialMonth(events))]),
-      isLoading: false
+      isLoading: false,
+      isSyncing: false
     }
+    deadlineDashboardStates.set(dashboard, state)
 
     dashboard.innerHTML = `
       <div class="ou-deadline-hero">
@@ -668,7 +1006,10 @@
           <button type="button" data-ou-deadline-next aria-label="Xem tháng sau"><span class="ou-deadline-month-icon ou-deadline-month-icon-next" aria-hidden="true"></span></button>
         </div>
       </div>
-      <div class="ou-deadline-note" data-ou-deadline-note>Đồng bộ từ lịch và các trang môn học</div>
+      <div class="ou-deadline-sync-row">
+        <div class="ou-deadline-note" data-ou-deadline-note>Đồng bộ từ lịch và các trang môn học</div>
+        <button type="button" class="ou-deadline-refresh" data-ou-deadline-refresh>Đồng bộ lại</button>
+      </div>
       <div class="ou-deadline-list" data-ou-deadline-list></div>
     `
 
@@ -681,6 +1022,7 @@
     const nextButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-next]"))
     const monthPicker = /** @type {HTMLElement | null} */ (dashboard.querySelector("[data-ou-deadline-month-picker]"))
     const exportButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-export]"))
+    const refreshButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-refresh]"))
 
     syncCourseFilter(courseFilter, state.events)
     syncMonthPicker(monthPicker, state.events, state.selectedMonth)
@@ -706,8 +1048,36 @@
     exportButton?.addEventListener("click", () => {
       exportDeadlineCalendar(dashboard, state)
     })
+    refreshButton?.addEventListener("click", () => {
+      refreshDeadlineDashboard(dashboard, state.nativeEvents, true).catch(() => {
+        setDeadlineSyncStatus(dashboard, "Không thể đồng bộ lúc này · đang hiển thị dữ liệu gần nhất")
+      })
+    })
 
     return dashboard
+  }
+
+  function updateDeadlineDashboardEvents(dashboard, events) {
+    const state = deadlineDashboardStates.get(dashboard)
+    if (!state) return
+    state.events = mergeEvents(events, [])
+    if (state.selectedCourse && !state.events.some((event) => event.course === state.selectedCourse)) {
+      state.selectedCourse = ""
+    }
+    syncCourseFilter(dashboard.querySelector("[data-ou-deadline-course-filter]"), state.events)
+    renderDeadlineMonth(dashboard, state)
+  }
+
+  function setDeadlineSyncStatus(dashboard, message) {
+    const note = dashboard.querySelector("[data-ou-deadline-note]")
+    if (note instanceof HTMLElement) note.textContent = message
+  }
+
+  function setDeadlineRefreshBusy(dashboard, isBusy) {
+    const button = dashboard.querySelector("[data-ou-deadline-refresh]")
+    if (!(button instanceof HTMLButtonElement)) return
+    button.disabled = isBusy
+    button.textContent = isBusy ? "Đang đồng bộ..." : "Đồng bộ lại"
   }
 
   function getInitialMonth(events) {
@@ -1369,7 +1739,12 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-month-icon-next { transform: rotate(-90deg); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-month-nav > button:hover:not(:disabled) { border-color: rgba(82, 105, 199, .42); background: #f7f8ff; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-month-nav > button:disabled { cursor: wait; opacity: .45; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-note { margin: 0 0 10px; color: var(--ou-deadline-muted); font-size: 12px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-sync-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-note { min-width: 0; color: var(--ou-deadline-muted); font-size: 12px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-refresh { flex: 0 0 auto; padding: 3px 5px; border: 0; background: transparent; color: var(--ou-deadline-brand); cursor: pointer; font: inherit; font-size: 11px; font-weight: 750; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-refresh:hover:not(:disabled) { text-decoration: underline; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-refresh:focus-visible { outline: 2px solid rgba(82, 105, 199, .35); outline-offset: 2px; border-radius: 4px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-refresh:disabled { cursor: wait; opacity: .55; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-list { display: grid; gap: 8px; transition: opacity .16s ease; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-list-loading { opacity: .58; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row { display: grid; grid-template-columns: 24px 84px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--ou-deadline-line); border-radius: 14px; background: #fff; box-shadow: 0 4px 14px rgba(33, 49, 93, .045); transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease, opacity .16s ease; }
@@ -1437,6 +1812,7 @@
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { flex-basis: auto; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-month-nav { align-self: flex-start; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-export { align-self: flex-start; }
+        #${DEADLINE_DASHBOARD_ID} .ou-deadline-sync-row { align-items: flex-start; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-stats { align-self: flex-start; text-align: left; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-row { grid-template-columns: 22px 66px minmax(0, 1fr); gap: 10px; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-open { grid-column: 3; }
