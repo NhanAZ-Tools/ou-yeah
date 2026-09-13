@@ -1618,16 +1618,21 @@
     row.dataset.ouDeadlineRow = "true"
     const isCompleted = isDeadlineCompleted(event)
     const originalEvent = findOriginalDeadline(event, allEvents)
-    const extensionNotNeeded = Boolean(originalEvent && isDeadlineCompleted(originalEvent))
-    const isForum = /\/mod\/forum\//i.test(event.href || "")
     const now = Date.now()
+    const extensionNotNeeded = Boolean(originalEvent && isDeadlineCompleted(originalEvent))
+    const isExtensionActionable = isExtensionDeadline(event)
+      && Boolean(originalEvent && !isDeadlineCompleted(originalEvent) && originalEvent.date.getTime() < now)
+    const isInactiveExtension = isExtensionDeadline(event)
+      && Boolean(originalEvent)
+      && !extensionNotNeeded
+      && !isExtensionActionable
+    const isForum = /\/mod\/forum\//i.test(event.href || "")
     const eventTime = event.date.getTime()
     const isOverdue = !isCompleted && !extensionNotNeeded && eventTime < now
     const isDueSoon = !isCompleted && !extensionNotNeeded && eventTime >= now && eventTime <= now + (3 * 24 * 60 * 60 * 1000)
     const isOverdueLocked = isOverdue && !isForum
     const isMeeting = event.kind === "meeting"
     const isExtension = isExtensionDeadline(event)
-    const isSubmittedExtension = isExtension && isCompleted && !extensionNotNeeded
     const isTemporarilyRetained = isMeeting
       && event.temporary === true
       && Number(event.temporaryUntil) > Date.now()
@@ -1647,7 +1652,7 @@
     const statusMarkup = extensionNotNeeded
       ? '<span class="ou-deadline-status-not-needed">ĐÃ XONG HẠN GỐC</span>'
       : isExtension && isCompleted
-        ? '<span class="ou-deadline-status-submitted ou-deadline-status-submitted-late">ĐÃ NỘP GIA HẠN</span>'
+        ? `<span class="ou-deadline-status-submitted ${isExtensionActionable ? "ou-deadline-status-submitted-late" : "ou-deadline-status-submitted-inactive"}">ĐÃ NỘP GIA HẠN</span>`
         : isOverdue
           ? '<span class="ou-deadline-status-overdue">QUÁ HẠN</span>'
           : isDueSoon
@@ -1658,7 +1663,8 @@
     row.classList.toggle("ou-deadline-row-overdue", isOverdueLocked)
     row.classList.toggle("ou-deadline-row-overdue-actionable", isOverdue && isForum)
     row.classList.toggle("ou-deadline-row-due-soon", isDueSoon)
-    row.classList.toggle("ou-deadline-row-extension-submitted", isSubmittedExtension)
+    row.classList.toggle("ou-deadline-row-extension-actionable", isExtensionActionable)
+    row.classList.toggle("ou-deadline-row-extension-inactive", isInactiveExtension)
     row.innerHTML = `
       <label class="ou-deadline-check">
         <input type="checkbox" data-ou-deadline-complete ${isCompleted && !extensionNotNeeded ? "checked" : ""} disabled>
@@ -1807,6 +1813,8 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-not-needed:hover { border-color: transparent; background: #eef0f2; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-overdue:hover { border-color: #e9a9a9; background: #fff5f5; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-overdue-actionable:hover { border-color: #e9a9a9; background: #fff5f5; box-shadow: none; transform: none; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-extension-actionable:hover { border-color: transparent; background: #fff1f1; box-shadow: inset 3px 0 0 #d96b6b; transform: none; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-extension-inactive:hover { border-color: transparent; background: #eef0f2; box-shadow: inset 3px 0 0 #c9ced8; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-completed { opacity: .82; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed { opacity: .78; background: #f4f5f7; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-not-needed { background: #f4f5f7; }
@@ -1829,10 +1837,18 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-due-soon:hover { border-color: transparent; background: #fff8e8; box-shadow: inset 3px 0 0 #e4a62a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-due-soon .ou-deadline-date strong { color: #b77700; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-completed .ou-deadline-content h3 { text-decoration: line-through; text-decoration-color: rgba(82, 105, 199, .6); text-decoration-thickness: 1px; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-submitted { background: linear-gradient(110deg, #fff7f7, #fff); box-shadow: inset 3px 0 0 #d96b6b; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-extension-submitted { background: linear-gradient(110deg, #fff7f7, #fff); box-shadow: inset 3px 0 0 #d96b6b; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-submitted:hover { border-color: transparent; background: #fff1f1; box-shadow: inset 3px 0 0 #d96b6b; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-submitted .ou-deadline-date strong { color: #c24141; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-actionable { background: linear-gradient(110deg, #fff7f7, #fff); box-shadow: inset 3px 0 0 #d96b6b; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-extension-actionable { background: linear-gradient(110deg, #fff7f7, #fff); box-shadow: inset 3px 0 0 #d96b6b; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-actionable:hover { border-color: transparent; background: #fff1f1; box-shadow: inset 3px 0 0 #d96b6b; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-actionable .ou-deadline-date strong { color: #c24141; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive { background: linear-gradient(110deg, #f4f5f7, #fff); box-shadow: inset 3px 0 0 #c9ced8; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-extension-inactive { background: linear-gradient(110deg, #f4f5f7, #fff); box-shadow: inset 3px 0 0 #c9ced8; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive:hover { border-color: transparent; background: #eef0f2; box-shadow: inset 3px 0 0 #c9ced8; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-date strong { color: #858d9d; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-course { color: #858d9d; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-content h3 a { color: #737b89; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-content p { color: #8d95a4; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-type-extension { background: #eef0f4; color: #70798a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check { display: inline-grid; width: 22px; height: 22px; place-items: center; cursor: default; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check input { position: absolute; width: 1px; height: 1px; opacity: 0; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check input + span { position: relative; display: block; width: 18px; height: 18px; border: 1.5px solid #c8d0e2; border-radius: 6px; background: #fff; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
@@ -1858,6 +1874,7 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-not-needed { padding: 3px 6px; border: 1px solid #d9dde5; border-radius: 999px; background: #eef0f4; color: #70798a; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-submitted, #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-extension { padding: 3px 6px; border-radius: 999px; background: #e8f6ed; color: #287747; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-submitted-late { border: 1px solid #f1caca; background: #fff0f0; color: #c24141; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-submitted-inactive { border: 1px solid #d9dde5; background: #eef0f4; color: #70798a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-extension { background: #fff6df; color: #9a6a00; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-overdue { padding: 3px 6px; border-radius: 999px; background: #fff0f0; color: #c24141; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-due-soon { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 999px; background: #fff3d5; color: #a46600; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
