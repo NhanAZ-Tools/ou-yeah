@@ -1868,7 +1868,7 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-date small { display: block; margin-top: 6px; color: var(--ou-deadline-muted); font-size: 11px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course { color: var(--ou-deadline-brand); font-size: 12px; font-weight: 750; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-type { padding: 3px 6px; border-radius: 999px; background: #fff2e7; color: #b45309; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-type { padding: 3px 6px; border-radius: 999px; background: #e8f1ff; color: #3156a6; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-type-meeting { background: #e8f1ff; color: #3156a6; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-type-extension { background: #f2ebff; color: #7650ad; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-not-needed { padding: 3px 6px; border: 1px solid #d9dde5; border-radius: 999px; background: #eef0f4; color: #70798a; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
