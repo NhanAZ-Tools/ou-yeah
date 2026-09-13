@@ -1857,10 +1857,10 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-stats span, #${DEADLINE_DASHBOARD_ID} .ou-deadline-stats small { display: block; color: var(--ou-deadline-muted); font-size: 11px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-stats small { margin-top: 5px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 16px 0 8px; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { display: flex; flex: 1 1 auto; gap: 8px; min-width: 0; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter { position: relative; flex: 0 1 230px; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { flex: 1 1 260px; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { position: relative; display: inline-flex; flex: 0 1 190px; min-width: 170px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { display: flex; align-items: center; flex: 1 1 auto; gap: 8px; height: 40px; min-width: 0; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter { position: relative; flex: 0 1 230px; height: 40px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { display: block; flex: 1 1 260px; height: 40px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { position: relative; display: inline-flex; flex: 0 1 190px; height: 40px; min-width: 170px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search input { width: 100%; height: 40px; min-height: 40px; padding: 9px 13px; border: 1px solid var(--ou-deadline-line); border-radius: 10px; background: #fff; color: var(--ou-deadline-ink); outline: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; font: inherit; text-align: left; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter.is-open .ou-deadline-course-trigger { border-color: rgba(82, 105, 199, .52); box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); }
@@ -2000,7 +2000,8 @@
       @media (max-width: 720px) {
         #${DEADLINE_DASHBOARD_ID} { margin-top: 14px; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-hero, #${DEADLINE_DASHBOARD_ID} .ou-deadline-toolbar, #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { align-items: stretch; flex-direction: column; }
-        #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search, #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { flex-basis: auto; }
+        #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { height: auto; }
+        #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search, #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { flex-basis: auto; height: 40px; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-month-nav { align-self: flex-start; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-footer { justify-content: flex-start; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-sync-row { align-items: flex-start; }
