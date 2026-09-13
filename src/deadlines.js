@@ -19,6 +19,7 @@
   const DUE_SOON_STATUS_TTL = 5 * 60 * 1000
   const OVERDUE_FORUM_STATUS_TTL = 15 * 60 * 1000
   const OVERDUE_ACTIVITY_STATUS_TTL = 24 * 60 * 60 * 1000
+  const TEMPORARY_MEETING_RETENTION = 7 * 24 * 60 * 60 * 1000
   const REQUEST_CONCURRENCY = 4
   const FORUM_DISCUSSION_CONCURRENCY = 3
   const BRAND = "#5269c7"
@@ -277,7 +278,11 @@
         && metadata.successfulSources === metadata.totalSources
       if (metadataFullyUpdated) metadataUpdatedAt = Date.now()
       const metadataFallback = metadataFullyUpdated ? nativeEvents : mergeEvents(cachedEvents, nativeEvents)
-      events = applyCachedCompletion(mergeEvents(metadata.events, metadataFallback), cachedEvents)
+      const knownMeetings = mergeEvents(cachedEvents, nativeEvents).filter((event) => event.kind === "meeting")
+      events = applyCachedCompletion(
+        retainMissingMeetingsTemporarily(mergeEvents(metadata.events, metadataFallback), knownMeetings),
+        cachedEvents
+      )
       updateDeadlineDashboardEvents(dashboard, events)
       latestSavedAt = await writeDeadlineCache({ events, metadataUpdatedAt, courseUrls, courseUrlsUpdatedAt })
     }
@@ -335,11 +340,34 @@
 
     courseEvents.concat(nativeEvents).forEach((event) => {
       if (!(event?.date instanceof Date)) return
-      const key = `${event.date.getTime()}|${normalizeText(event.title)}|${normalizeText(event.course)}`
+      const key = eventIdentityKey(event)
       if (!unique.has(key)) unique.set(key, event)
     })
 
     return Array.from(unique.values()).sort(compareEvents)
+  }
+
+  function eventIdentityKey(event) {
+    return `${event.date.getTime()}|${normalizeText(event.title)}|${normalizeText(event.course)}`
+  }
+
+  function retainMissingMeetingsTemporarily(events, knownMeetings) {
+    const now = Date.now()
+    const currentKeys = new Set(events.map(eventIdentityKey))
+    const retained = knownMeetings
+      .filter((event) => {
+        if (event.kind !== "meeting") return false
+        const fallbackUntil = event.date.getTime() + TEMPORARY_MEETING_RETENTION
+        const temporaryUntil = Number(event.temporaryUntil) || fallbackUntil
+        return temporaryUntil > now && !currentKeys.has(eventIdentityKey(event))
+      })
+      .map((event) => ({
+        ...event,
+        temporary: true,
+        temporaryUntil: Number(event.temporaryUntil) || event.date.getTime() + TEMPORARY_MEETING_RETENTION
+      }))
+
+    return mergeEvents(events, retained)
   }
 
   async function discoverCourseUrls(cachedUrls = [], cachedAt = 0) {
@@ -450,7 +478,9 @@
       href: String(event.href || ""),
       kind: event.kind === "meeting" ? "meeting" : "deadline",
       completed: event.completed === true,
-      completionCheckedAt: Number(event.completionCheckedAt) || 0
+      completionCheckedAt: Number(event.completionCheckedAt) || 0,
+      temporary: event.temporary === true,
+      temporaryUntil: Number(event.temporaryUntil) || 0
     }))
   }
 
@@ -469,6 +499,8 @@
         kind: value.kind === "meeting" ? "meeting" : "deadline",
         completed: value.completed === true,
         completionCheckedAt: Number(value.completionCheckedAt) || 0,
+        temporary: value.temporary === true,
+        temporaryUntil: Number(value.temporaryUntil) || 0,
         source: null
       }
     }).filter(Boolean).sort(compareEvents)
@@ -1595,8 +1627,15 @@
     const isOverdueLocked = isOverdue && !isForum
     const isMeeting = event.kind === "meeting"
     const isExtension = isExtensionDeadline(event)
+    const isTemporarilyRetained = isMeeting
+      && event.temporary === true
+      && Number(event.temporaryUntil) > Date.now()
     const typeLabel = isMeeting ? "VC / MEETING" : isExtension ? "GIA HẠN" : "DEADLINE"
     const typeClass = isMeeting ? "ou-deadline-type-meeting" : isExtension ? "ou-deadline-type-extension" : ""
+    const temporaryTooltip = isTemporarilyRetained ? getTemporaryMeetingTooltip(event) : ""
+    const temporaryMarkup = isTemporarilyRetained
+      ? `<span class="ou-deadline-status-temporary" tabindex="0" title="${escapeAttribute(temporaryTooltip)}" aria-label="${escapeAttribute(temporaryTooltip)}">TẠM LƯU</span>`
+      : ""
     const completionLabel = extensionNotNeeded
       ? "Không cần làm vì đã hoàn thành hạn gốc"
       : isCompleted
@@ -1630,13 +1669,22 @@
         <small>${event.time}</small>
       </div>
       <div class="ou-deadline-content">
-        <div class="ou-deadline-meta"><span class="ou-deadline-course">${escapeHtml(event.course)}</span><span class="ou-deadline-type ${typeClass}">${typeLabel}</span>${statusMarkup}</div>
+        <div class="ou-deadline-meta"><span class="ou-deadline-course">${escapeHtml(event.course)}</span><span class="ou-deadline-type ${typeClass}">${typeLabel}</span>${statusMarkup}${temporaryMarkup}</div>
         <h3>${event.href ? `<a href="${escapeAttribute(event.href)}">${escapeHtml(event.title)}</a>` : escapeHtml(event.title)}</h3>
         <p>${escapeHtml(event.dateLabel || formatDate(event.date))} · ${event.time}</p>
       </div>
       ${event.href ? `<a class="ou-deadline-open" href="${escapeAttribute(event.href)}">Mở bài<span aria-hidden="true"> ↗</span></a>` : ""}
     `
     return row
+  }
+
+  function getTemporaryMeetingTooltip(event) {
+    const until = Number(event.temporaryUntil) || 0
+    const reason = event.completed === true
+      ? "ELOLMS đã ẩn buổi VC khỏi lịch sau khi điểm danh"
+      : "ELOLMS không còn trả buổi VC trong lịch hiện tại"
+    const retention = until > 0 ? ` OU Yeah! tạm giữ mục này đến ${formatDate(new Date(until))}.` : ""
+    return `${reason}.${retention}`
   }
 
   function createDeadlinePair(entry, allEvents) {
@@ -1798,6 +1846,8 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-extension { background: #fff6df; color: #9a6a00; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-overdue { padding: 3px 6px; border-radius: 999px; background: #fff0f0; color: #c24141; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-due-soon { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 999px; background: #fff3d5; color: #a46600; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-temporary { padding: 3px 6px; border: 1px solid #d8dff7; border-radius: 999px; background: #f0f3ff; color: #5269c7; cursor: help; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-temporary:focus-visible { outline: 2px solid rgba(82, 105, 199, .35); outline-offset: 2px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-due-soon-icon { display: inline-block; width: 11px; height: 11px; flex: 0 0 11px; background: currentColor; -webkit-mask: url("${exclamationUrl}") center / contain no-repeat; mask: url("${exclamationUrl}") center / contain no-repeat; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-content h3 { margin: 5px 0 0; font-size: 16px; font-weight: 750; line-height: 1.3; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-content h3 a { color: var(--ou-deadline-ink); text-decoration: none; }
