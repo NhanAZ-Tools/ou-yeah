@@ -1023,13 +1023,16 @@
             <span class="sr-only">Tìm deadline</span>
             <input type="search" placeholder="Tìm theo tên bài" data-ou-deadline-search>
           </label>
-          <label class="ou-deadline-completed-filter">
-            <span class="sr-only">Lọc trạng thái deadline</span>
-            <select data-ou-deadline-completion-filter aria-label="Lọc trạng thái deadline">
-              <option value="all">Tất cả deadline</option>
-              <option value="hide-completed">Ẩn đã thực hiện</option>
-            </select>
-          </label>
+          <div class="ou-deadline-completed-filter" data-ou-deadline-completion-filter>
+            <button type="button" class="ou-deadline-completion-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Lọc trạng thái deadline">
+              <span data-ou-deadline-completion-value>Tất cả deadline</span>
+              <span class="ou-deadline-completion-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="ou-deadline-completion-menu" role="listbox" hidden>
+              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="all" aria-selected="true">Tất cả deadline</button>
+              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="hide-completed" aria-selected="false">Ẩn đã thực hiện</button>
+            </div>
+          </div>
         </div>
         <div class="ou-deadline-month-nav" aria-label="Điều hướng theo tháng">
           <button type="button" data-ou-deadline-previous aria-label="Xem tháng trước"><span class="ou-deadline-month-icon ou-deadline-month-icon-previous" aria-hidden="true"></span></button>
@@ -1060,7 +1063,7 @@
 
     const courseFilter = /** @type {HTMLElement | null} */ (dashboard.querySelector("[data-ou-deadline-course-filter]"))
     const search = /** @type {HTMLInputElement | null} */ (dashboard.querySelector("input[data-ou-deadline-search]"))
-    const completionFilter = /** @type {HTMLSelectElement | null} */ (dashboard.querySelector("select[data-ou-deadline-completion-filter]"))
+    const completionFilter = /** @type {HTMLElement | null} */ (dashboard.querySelector("[data-ou-deadline-completion-filter]"))
     const previousButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-previous]"))
     const nextButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-next]"))
     const monthPicker = /** @type {HTMLElement | null} */ (dashboard.querySelector("[data-ou-deadline-month-picker]"))
@@ -1068,9 +1071,14 @@
     const refreshButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-refresh]"))
 
     syncCourseFilter(courseFilter, state.events)
+    syncCompletionFilter(completionFilter, state.hideCompleted)
     syncMonthPicker(monthPicker, state.events, state.selectedMonth)
     setupCourseFilter(courseFilter, (value) => {
       state.selectedCourse = value
+      renderDeadlineMonth(dashboard, state)
+    })
+    setupCompletionFilter(completionFilter, (value) => {
+      state.hideCompleted = value === "hide-completed"
       renderDeadlineMonth(dashboard, state)
     })
     setupMonthPicker(monthPicker, (value) => {
@@ -1080,10 +1088,6 @@
 
     search?.addEventListener("input", () => {
       state.query = search.value
-      renderDeadlineMonth(dashboard, state)
-    })
-    completionFilter?.addEventListener("change", () => {
-      state.hideCompleted = completionFilter.value === "hide-completed"
       renderDeadlineMonth(dashboard, state)
     })
     previousButton?.addEventListener("click", () => {
@@ -1112,6 +1116,7 @@
       state.selectedCourse = ""
     }
     syncCourseFilter(dashboard.querySelector("[data-ou-deadline-course-filter]"), state.events)
+    syncCompletionFilter(dashboard.querySelector("[data-ou-deadline-completion-filter]"), state.hideCompleted)
     renderDeadlineMonth(dashboard, state)
   }
 
@@ -1287,6 +1292,57 @@
       if (!(target instanceof HTMLElement)) return
       container.dataset.value = target.getAttribute("data-course-value") || ""
       updateCourseFilterDisplay(container)
+      setOpen(false)
+      onChange(container.dataset.value)
+    })
+    document.addEventListener("click", (event) => {
+      if (event.target instanceof Node && !container.contains(event.target)) setOpen(false)
+    })
+  }
+
+  function syncCompletionFilter(container, hideCompleted) {
+    if (!(container instanceof HTMLElement)) return
+    const value = hideCompleted ? "hide-completed" : "all"
+    container.dataset.value = value
+    updateCompletionFilterDisplay(container)
+  }
+
+  function updateCompletionFilterDisplay(container) {
+    const value = container.dataset.value || "all"
+    const valueElement = container.querySelector("[data-ou-deadline-completion-value]")
+    const selectedOption = Array.from(container.querySelectorAll("[data-completion-value]"))
+      .find((option) => option.getAttribute("data-completion-value") === value)
+    if (valueElement) valueElement.textContent = selectedOption?.textContent || "Tất cả deadline"
+    container.querySelectorAll("[data-completion-value]").forEach((option) => {
+      option.setAttribute("aria-selected", String(option.getAttribute("data-completion-value") === value))
+    })
+  }
+
+  function setupCompletionFilter(container, onChange) {
+    if (!(container instanceof HTMLElement)) return
+    const trigger = container.querySelector(".ou-deadline-completion-trigger")
+    const menu = container.querySelector("[role='listbox']")
+    if (!(trigger instanceof HTMLButtonElement) || !(menu instanceof HTMLElement)) return
+
+    const setOpen = (open) => {
+      menu.hidden = !open
+      trigger.setAttribute("aria-expanded", String(open))
+      container.classList.toggle("is-open", open)
+    }
+
+    trigger.addEventListener("click", () => setOpen(menu.hidden))
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+        event.preventDefault()
+        setOpen(true)
+      }
+      if (event.key === "Escape") setOpen(false)
+    })
+    menu.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-completion-value]") : null
+      if (!(target instanceof HTMLElement)) return
+      container.dataset.value = target.getAttribute("data-completion-value") || "all"
+      updateCompletionFilterDisplay(container)
       setOpen(false)
       onChange(container.dataset.value)
     })
@@ -1805,18 +1861,24 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter { position: relative; flex: 0 1 230px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { flex: 1 1 260px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { position: relative; display: inline-flex; flex: 0 1 190px; min-width: 170px; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter::after { position: absolute; top: 50%; right: 13px; width: 16px; height: 16px; background-color: var(--ou-deadline-muted); content: ""; pointer-events: none; transform: translateY(-50%); -webkit-mask: url("${chevronUrl}") center / contain no-repeat; mask: url("${chevronUrl}") center / contain no-repeat; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter select { width: 100%; min-height: 40px; appearance: none; padding: 9px 36px 9px 13px; border: 1px solid var(--ou-deadline-line); border-radius: 10px; background: #fff; color: var(--ou-deadline-ink); cursor: pointer; font: inherit; font-size: 13px; outline: none; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter select:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter select:focus { border-color: rgba(82, 105, 199, .52); box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search input { width: 100%; min-height: 40px; padding: 9px 13px; border: 1px solid var(--ou-deadline-line); border-radius: 10px; background: #fff; color: var(--ou-deadline-ink); outline: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; font: inherit; text-align: left; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter.is-open .ou-deadline-course-trigger { border-color: rgba(82, 105, 199, .52); box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 40px; padding: 9px 13px; border: 1px solid var(--ou-deadline-line); border-radius: 10px; background: #fff; color: var(--ou-deadline-ink); cursor: pointer; font: inherit; font-size: 13px; text-align: left; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-trigger:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter.is-open .ou-deadline-completion-trigger { border-color: rgba(82, 105, 199, .52); box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-trigger:focus-visible { outline: none; border-color: var(--ou-deadline-brand); box-shadow: 0 0 0 3px rgba(82, 105, 199, .12); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-trigger > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-chevron { display: block; width: 16px; height: 16px; flex: 0 0 16px; background-color: var(--ou-deadline-muted); transition: transform .16s ease; -webkit-mask: url("${chevronUrl}") center / contain no-repeat; mask: url("${chevronUrl}") center / contain no-repeat; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter.is-open .ou-deadline-completion-chevron { transform: rotate(180deg); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-chevron, #${DEADLINE_DASHBOARD_ID} .ou-deadline-month-icon { display: block; width: 16px; height: 16px; flex: 0 0 16px; background-color: currentColor; -webkit-mask: url("${chevronUrl}") center / contain no-repeat; mask: url("${chevronUrl}") center / contain no-repeat; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-chevron { color: var(--ou-deadline-muted); transition: transform .16s ease; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter.is-open .ou-deadline-course-chevron { transform: rotate(180deg); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-menu { position: absolute; z-index: 10; top: calc(100% + 6px); right: 0; left: 0; max-height: 260px; overflow: auto; padding: 6px; border: 1px solid var(--ou-deadline-line); border-radius: 12px; background: rgba(255, 255, 255, .98); box-shadow: 0 12px 28px rgba(33, 49, 93, .14); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-option { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ou-deadline-ink); cursor: pointer; font: inherit; font-size: 13px; text-align: left; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-option:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-option[aria-selected="true"] { background: #eef2ff; color: var(--ou-deadline-brand); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-menu { position: absolute; z-index: 10; top: calc(100% + 6px); right: 0; left: 0; max-height: 260px; overflow: auto; padding: 6px; border: 1px solid var(--ou-deadline-line); border-radius: 12px; background: rgba(255, 255, 255, .98); box-shadow: 0 12px 28px rgba(33, 49, 93, .14); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-option { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ou-deadline-ink); cursor: pointer; font: inherit; font-size: 13px; text-align: left; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-option:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-completion-option[aria-selected="true"] { background: #eef2ff; color: var(--ou-deadline-brand); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-search input:focus { border-color: var(--ou-deadline-brand); box-shadow: 0 0 0 3px rgba(82, 105, 199, .12); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-export { min-height: 40px; padding: 9px 13px; border: 1px solid rgba(82, 105, 199, .24); border-radius: 10px; background: #f7f8ff; color: var(--ou-deadline-brand); cursor: pointer; font: inherit; font-size: 12px; font-weight: 750; white-space: nowrap; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-export:hover { border-color: rgba(82, 105, 199, .52); background: #eef2ff; box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); transform: translateY(-1px); }
