@@ -1915,6 +1915,7 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row { border: 0; border-radius: 0; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row + .ou-deadline-row { border-top: 1px solid var(--ou-deadline-line); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row:hover { border-color: transparent; background: #fbfcff; box-shadow: none; transform: none; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-base { background: linear-gradient(110deg, #f6f9ff, #fff); box-shadow: inset 3px 0 0 #5269c7; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-not-needed:hover { border-color: transparent; background: #eef0f2; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-overdue:hover { border-color: #e9a9a9; background: #fff5f5; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-overdue-actionable:hover { border-color: #e9a9a9; background: #fff5f5; box-shadow: none; transform: none; }

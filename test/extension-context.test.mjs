@@ -751,6 +751,7 @@ test("deadline page renders cached data first and refreshes volatile state in th
   assert.match(source, /ou-deadline-status-submitted-inactive/)
   assert.match(source, /ou-deadline-type \{ padding: 3px 6px; border-radius: 999px; background: #e8f1ff; color: #3156a6; /)
   assert.match(source, /ou-deadline-row-base/)
+  assert.match(source, /ou-deadline-pair \.ou-deadline-row\.ou-deadline-row-base \{ background: linear-gradient/)
   assert.match(source, /ou-deadline-pair \.ou-deadline-row\.ou-deadline-row-base:hover/)
   assert.match(source, /data-ou-deadline-completion-filter/)
   assert.match(source, /hide-completed/)
