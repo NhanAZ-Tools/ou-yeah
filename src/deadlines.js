@@ -19,6 +19,7 @@
   const DUE_SOON_STATUS_TTL = 5 * 60 * 1000
   const OVERDUE_FORUM_STATUS_TTL = 15 * 60 * 1000
   const OVERDUE_ACTIVITY_STATUS_TTL = 24 * 60 * 60 * 1000
+  const TEMPORARY_MEETING_RETENTION = 7 * 24 * 60 * 60 * 1000
   const REQUEST_CONCURRENCY = 4
   const FORUM_DISCUSSION_CONCURRENCY = 3
   const BRAND = "#5269c7"
@@ -277,7 +278,11 @@
         && metadata.successfulSources === metadata.totalSources
       if (metadataFullyUpdated) metadataUpdatedAt = Date.now()
       const metadataFallback = metadataFullyUpdated ? nativeEvents : mergeEvents(cachedEvents, nativeEvents)
-      events = applyCachedCompletion(mergeEvents(metadata.events, metadataFallback), cachedEvents)
+      const knownMeetings = mergeEvents(cachedEvents, nativeEvents).filter((event) => event.kind === "meeting")
+      events = applyCachedCompletion(
+        retainMissingMeetingsTemporarily(mergeEvents(metadata.events, metadataFallback), knownMeetings),
+        cachedEvents
+      )
       updateDeadlineDashboardEvents(dashboard, events)
       latestSavedAt = await writeDeadlineCache({ events, metadataUpdatedAt, courseUrls, courseUrlsUpdatedAt })
     }
@@ -335,11 +340,34 @@
 
     courseEvents.concat(nativeEvents).forEach((event) => {
       if (!(event?.date instanceof Date)) return
-      const key = `${event.date.getTime()}|${normalizeText(event.title)}|${normalizeText(event.course)}`
+      const key = eventIdentityKey(event)
       if (!unique.has(key)) unique.set(key, event)
     })
 
     return Array.from(unique.values()).sort(compareEvents)
+  }
+
+  function eventIdentityKey(event) {
+    return `${event.date.getTime()}|${normalizeText(event.title)}|${normalizeText(event.course)}`
+  }
+
+  function retainMissingMeetingsTemporarily(events, knownMeetings) {
+    const now = Date.now()
+    const currentKeys = new Set(events.map(eventIdentityKey))
+    const retained = knownMeetings
+      .filter((event) => {
+        if (event.kind !== "meeting") return false
+        const fallbackUntil = event.date.getTime() + TEMPORARY_MEETING_RETENTION
+        const temporaryUntil = Number(event.temporaryUntil) || fallbackUntil
+        return temporaryUntil > now && !currentKeys.has(eventIdentityKey(event))
+      })
+      .map((event) => ({
+        ...event,
+        temporary: true,
+        temporaryUntil: Number(event.temporaryUntil) || event.date.getTime() + TEMPORARY_MEETING_RETENTION
+      }))
+
+    return mergeEvents(events, retained)
   }
 
   async function discoverCourseUrls(cachedUrls = [], cachedAt = 0) {
@@ -450,7 +478,9 @@
       href: String(event.href || ""),
       kind: event.kind === "meeting" ? "meeting" : "deadline",
       completed: event.completed === true,
-      completionCheckedAt: Number(event.completionCheckedAt) || 0
+      completionCheckedAt: Number(event.completionCheckedAt) || 0,
+      temporary: event.temporary === true,
+      temporaryUntil: Number(event.temporaryUntil) || 0
     }))
   }
 
@@ -469,6 +499,8 @@
         kind: value.kind === "meeting" ? "meeting" : "deadline",
         completed: value.completed === true,
         completionCheckedAt: Number(value.completionCheckedAt) || 0,
+        temporary: value.temporary === true,
+        temporaryUntil: Number(value.temporaryUntil) || 0,
         source: null
       }
     }).filter(Boolean).sort(compareEvents)
@@ -1595,8 +1627,16 @@
     const isOverdueLocked = isOverdue && !isForum
     const isMeeting = event.kind === "meeting"
     const isExtension = isExtensionDeadline(event)
+    const isSubmittedExtension = isExtension && isCompleted && !extensionNotNeeded
+    const isTemporarilyRetained = isMeeting
+      && event.temporary === true
+      && Number(event.temporaryUntil) > Date.now()
     const typeLabel = isMeeting ? "VC / MEETING" : isExtension ? "GIA HẠN" : "DEADLINE"
     const typeClass = isMeeting ? "ou-deadline-type-meeting" : isExtension ? "ou-deadline-type-extension" : ""
+    const temporaryTooltip = isTemporarilyRetained ? getTemporaryMeetingTooltip(event) : ""
+    const temporaryMarkup = isTemporarilyRetained
+      ? `<span class="ou-deadline-status-temporary" tabindex="0" title="${escapeAttribute(temporaryTooltip)}" aria-label="${escapeAttribute(temporaryTooltip)}">TẠM LƯU</span>`
+      : ""
     const completionLabel = extensionNotNeeded
       ? "Không cần làm vì đã hoàn thành hạn gốc"
       : isCompleted
@@ -1607,7 +1647,7 @@
     const statusMarkup = extensionNotNeeded
       ? '<span class="ou-deadline-status-not-needed">ĐÃ XONG HẠN GỐC</span>'
       : isExtension && isCompleted
-        ? '<span class="ou-deadline-status-submitted">ĐÃ NỘP GIA HẠN</span>'
+        ? '<span class="ou-deadline-status-submitted ou-deadline-status-submitted-late">ĐÃ NỘP GIA HẠN</span>'
         : isOverdue
           ? '<span class="ou-deadline-status-overdue">QUÁ HẠN</span>'
           : isDueSoon
@@ -1618,6 +1658,7 @@
     row.classList.toggle("ou-deadline-row-overdue", isOverdueLocked)
     row.classList.toggle("ou-deadline-row-overdue-actionable", isOverdue && isForum)
     row.classList.toggle("ou-deadline-row-due-soon", isDueSoon)
+    row.classList.toggle("ou-deadline-row-extension-submitted", isSubmittedExtension)
     row.innerHTML = `
       <label class="ou-deadline-check">
         <input type="checkbox" data-ou-deadline-complete ${isCompleted && !extensionNotNeeded ? "checked" : ""} disabled>
@@ -1630,13 +1671,22 @@
         <small>${event.time}</small>
       </div>
       <div class="ou-deadline-content">
-        <div class="ou-deadline-meta"><span class="ou-deadline-course">${escapeHtml(event.course)}</span><span class="ou-deadline-type ${typeClass}">${typeLabel}</span>${statusMarkup}</div>
+        <div class="ou-deadline-meta"><span class="ou-deadline-course">${escapeHtml(event.course)}</span><span class="ou-deadline-type ${typeClass}">${typeLabel}</span>${statusMarkup}${temporaryMarkup}</div>
         <h3>${event.href ? `<a href="${escapeAttribute(event.href)}">${escapeHtml(event.title)}</a>` : escapeHtml(event.title)}</h3>
         <p>${escapeHtml(event.dateLabel || formatDate(event.date))} · ${event.time}</p>
       </div>
       ${event.href ? `<a class="ou-deadline-open" href="${escapeAttribute(event.href)}">Mở bài<span aria-hidden="true"> ↗</span></a>` : ""}
     `
     return row
+  }
+
+  function getTemporaryMeetingTooltip(event) {
+    const until = Number(event.temporaryUntil) || 0
+    const reason = event.completed === true
+      ? "ELOLMS đã ẩn buổi VC khỏi lịch sau khi điểm danh"
+      : "ELOLMS không còn trả buổi VC trong lịch hiện tại"
+    const retention = until > 0 ? ` OU Yeah! tạm giữ mục này đến ${formatDate(new Date(until))}.` : ""
+    return `${reason}.${retention}`
   }
 
   function createDeadlinePair(entry, allEvents) {
@@ -1754,12 +1804,20 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row { border: 0; border-radius: 0; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row + .ou-deadline-row { border-top: 1px solid var(--ou-deadline-line); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row:hover { border-color: transparent; background: #fbfcff; box-shadow: none; transform: none; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-not-needed:hover { border-color: transparent; background: #eef0f2; box-shadow: none; transform: none; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-overdue:hover { border-color: #e9a9a9; background: #fff5f5; box-shadow: none; transform: none; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-overdue-actionable:hover { border-color: #e9a9a9; background: #fff5f5; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-completed { opacity: .82; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed { opacity: .72; background: #fafbff; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed { opacity: .78; background: #f4f5f7; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-not-needed { background: #f4f5f7; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed .ou-deadline-date strong { color: #858d9d; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed .ou-deadline-course { color: #858d9d; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed .ou-deadline-content h3 a { color: #737b89; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed .ou-deadline-content p { color: #8d95a4; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-overdue { border-color: #f0c7c7; background: linear-gradient(110deg, #fff8f8, #fff); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-overdue { background: linear-gradient(110deg, #fff8f8, #fff); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-overdue:hover { border-color: #e9a9a9; background: #fff5f5; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-overdue { opacity: .52; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-overdue { opacity: .64; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-overdue .ou-deadline-date strong { color: #c24141; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-overdue-actionable { border-color: #f0c7c7; background: linear-gradient(110deg, #fff8f8, #fff); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-overdue-actionable { background: linear-gradient(110deg, #fff8f8, #fff); }
@@ -1771,6 +1829,10 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-due-soon:hover { border-color: transparent; background: #fff8e8; box-shadow: inset 3px 0 0 #e4a62a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-due-soon .ou-deadline-date strong { color: #b77700; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-completed .ou-deadline-content h3 { text-decoration: line-through; text-decoration-color: rgba(82, 105, 199, .6); text-decoration-thickness: 1px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-submitted { background: linear-gradient(110deg, #fff7f7, #fff); box-shadow: inset 3px 0 0 #d96b6b; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-extension-submitted { background: linear-gradient(110deg, #fff7f7, #fff); box-shadow: inset 3px 0 0 #d96b6b; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-submitted:hover { border-color: transparent; background: #fff1f1; box-shadow: inset 3px 0 0 #d96b6b; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-submitted .ou-deadline-date strong { color: #c24141; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check { display: inline-grid; width: 22px; height: 22px; place-items: center; cursor: default; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check input { position: absolute; width: 1px; height: 1px; opacity: 0; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check input + span { position: relative; display: block; width: 18px; height: 18px; border: 1.5px solid #c8d0e2; border-radius: 6px; background: #fff; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
@@ -1793,11 +1855,14 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-type { padding: 3px 6px; border-radius: 999px; background: #fff2e7; color: #b45309; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-type-meeting { background: #e8f1ff; color: #3156a6; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-type-extension { background: #f2ebff; color: #7650ad; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-not-needed { padding: 3px 6px; border-radius: 999px; background: #e8f6ed; color: #287747; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-not-needed { padding: 3px 6px; border: 1px solid #d9dde5; border-radius: 999px; background: #eef0f4; color: #70798a; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-submitted, #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-extension { padding: 3px 6px; border-radius: 999px; background: #e8f6ed; color: #287747; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-submitted-late { border: 1px solid #f1caca; background: #fff0f0; color: #c24141; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-extension { background: #fff6df; color: #9a6a00; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-overdue { padding: 3px 6px; border-radius: 999px; background: #fff0f0; color: #c24141; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-due-soon { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 999px; background: #fff3d5; color: #a46600; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-temporary { padding: 3px 6px; border: 1px solid #d8dff7; border-radius: 999px; background: #f0f3ff; color: #5269c7; cursor: help; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-temporary:focus-visible { outline: 2px solid rgba(82, 105, 199, .35); outline-offset: 2px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-due-soon-icon { display: inline-block; width: 11px; height: 11px; flex: 0 0 11px; background: currentColor; -webkit-mask: url("${exclamationUrl}") center / contain no-repeat; mask: url("${exclamationUrl}") center / contain no-repeat; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-content h3 { margin: 5px 0 0; font-size: 16px; font-weight: 750; line-height: 1.3; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-content h3 a { color: var(--ou-deadline-ink); text-decoration: none; }
