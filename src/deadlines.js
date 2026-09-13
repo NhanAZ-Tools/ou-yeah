@@ -1024,8 +1024,11 @@
             <input type="search" placeholder="Tìm theo tên bài" data-ou-deadline-search>
           </label>
           <label class="ou-deadline-completed-filter">
-            <input type="checkbox" data-ou-deadline-hide-completed>
-            <span>Ẩn đã thực hiện</span>
+            <span class="sr-only">Lọc trạng thái deadline</span>
+            <select data-ou-deadline-completion-filter aria-label="Lọc trạng thái deadline">
+              <option value="all">Tất cả deadline</option>
+              <option value="hide-completed">Ẩn đã thực hiện</option>
+            </select>
           </label>
         </div>
         <div class="ou-deadline-month-nav" aria-label="Điều hướng theo tháng">
@@ -1057,7 +1060,7 @@
 
     const courseFilter = /** @type {HTMLElement | null} */ (dashboard.querySelector("[data-ou-deadline-course-filter]"))
     const search = /** @type {HTMLInputElement | null} */ (dashboard.querySelector("input[data-ou-deadline-search]"))
-    const hideCompleted = /** @type {HTMLInputElement | null} */ (dashboard.querySelector("input[data-ou-deadline-hide-completed]"))
+    const completionFilter = /** @type {HTMLSelectElement | null} */ (dashboard.querySelector("select[data-ou-deadline-completion-filter]"))
     const previousButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-previous]"))
     const nextButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-next]"))
     const monthPicker = /** @type {HTMLElement | null} */ (dashboard.querySelector("[data-ou-deadline-month-picker]"))
@@ -1079,8 +1082,8 @@
       state.query = search.value
       renderDeadlineMonth(dashboard, state)
     })
-    hideCompleted?.addEventListener("change", () => {
-      state.hideCompleted = hideCompleted.checked
+    completionFilter?.addEventListener("change", () => {
+      state.hideCompleted = completionFilter.value === "hide-completed"
       renderDeadlineMonth(dashboard, state)
     })
     previousButton?.addEventListener("click", () => {
@@ -1801,9 +1804,9 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { display: flex; flex: 1 1 auto; gap: 8px; min-width: 0; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter { position: relative; flex: 0 1 230px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { flex: 1 1 260px; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 40px; padding: 0 4px; color: var(--ou-deadline-muted); cursor: pointer; font-size: 12px; white-space: nowrap; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter input { width: 16px; height: 16px; margin: 0; accent-color: var(--ou-deadline-brand); cursor: pointer; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter:hover { color: var(--ou-deadline-brand); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { position: relative; display: inline-flex; flex: 0 1 190px; min-width: 170px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter select { width: 100%; min-height: 40px; padding: 9px 32px 9px 13px; border: 1px solid var(--ou-deadline-line); border-radius: 10px; background: #fff; color: var(--ou-deadline-ink); cursor: pointer; font: inherit; font-size: 12px; outline: none; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter select:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter select:focus { border-color: rgba(82, 105, 199, .52); box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search input { width: 100%; min-height: 40px; padding: 9px 13px; border: 1px solid var(--ou-deadline-line); border-radius: 10px; background: #fff; color: var(--ou-deadline-ink); outline: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; font: inherit; text-align: left; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter.is-open .ou-deadline-course-trigger { border-color: rgba(82, 105, 199, .52); box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); }
@@ -1934,7 +1937,7 @@
       @media (max-width: 720px) {
         #${DEADLINE_DASHBOARD_ID} { margin-top: 14px; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-hero, #${DEADLINE_DASHBOARD_ID} .ou-deadline-toolbar, #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { align-items: stretch; flex-direction: column; }
-        #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { flex-basis: auto; }
+        #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search, #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { flex-basis: auto; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-month-nav { align-self: flex-start; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-footer { justify-content: flex-start; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-sync-row { align-items: flex-start; }
