@@ -990,6 +990,7 @@
       selectedMonth: getInitialMonth(events),
       selectedCourse: "",
       query: "",
+      hideCompleted: false,
       loadedMonths: new Set([monthKey(getInitialMonth(events))]),
       isLoading: false,
       isSyncing: false
@@ -1022,10 +1023,11 @@
             <span class="sr-only">Tìm deadline</span>
             <input type="search" placeholder="Tìm theo tên bài" data-ou-deadline-search>
           </label>
+          <label class="ou-deadline-completed-filter">
+            <input type="checkbox" data-ou-deadline-hide-completed>
+            <span>Ẩn đã thực hiện</span>
+          </label>
         </div>
-        <button type="button" class="ou-deadline-export" data-ou-deadline-export title="Xuất toàn bộ mục đã đồng bộ thành file .ics">
-          Xuất toàn bộ lịch .ics
-        </button>
         <div class="ou-deadline-month-nav" aria-label="Điều hướng theo tháng">
           <button type="button" data-ou-deadline-previous aria-label="Xem tháng trước"><span class="ou-deadline-month-icon ou-deadline-month-icon-previous" aria-hidden="true"></span></button>
           <div class="ou-deadline-month-picker" data-ou-deadline-month-picker>
@@ -1043,6 +1045,11 @@
         <button type="button" class="ou-deadline-refresh" data-ou-deadline-refresh>Đồng bộ lại</button>
       </div>
       <div class="ou-deadline-list" data-ou-deadline-list></div>
+      <div class="ou-deadline-footer">
+        <button type="button" class="ou-deadline-export" data-ou-deadline-export title="Xuất toàn bộ mục đã đồng bộ thành file .ics">
+          Xuất toàn bộ lịch .ics
+        </button>
+      </div>
     `
 
     const list = dashboard.querySelector("[data-ou-deadline-list]")
@@ -1050,6 +1057,7 @@
 
     const courseFilter = /** @type {HTMLElement | null} */ (dashboard.querySelector("[data-ou-deadline-course-filter]"))
     const search = /** @type {HTMLInputElement | null} */ (dashboard.querySelector("input[data-ou-deadline-search]"))
+    const hideCompleted = /** @type {HTMLInputElement | null} */ (dashboard.querySelector("input[data-ou-deadline-hide-completed]"))
     const previousButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-previous]"))
     const nextButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-next]"))
     const monthPicker = /** @type {HTMLElement | null} */ (dashboard.querySelector("[data-ou-deadline-month-picker]"))
@@ -1069,6 +1077,10 @@
 
     search?.addEventListener("input", () => {
       state.query = search.value
+      renderDeadlineMonth(dashboard, state)
+    })
+    hideCompleted?.addEventListener("change", () => {
+      state.hideCompleted = hideCompleted.checked
       renderDeadlineMonth(dashboard, state)
     })
     previousButton?.addEventListener("click", () => {
@@ -1295,6 +1307,8 @@
       .filter((entry) => entry.events.some((event) => event.date >= month && event.date < nextMonth))
       .filter((entry) => !state.selectedCourse || entry.course === state.selectedCourse)
       .filter((entry) => !query || normalizeText(entry.events.map((event) => `${event.title} ${event.course}`).join(" ")).includes(query))
+      .map((entry) => state.hideCompleted ? filterCompletedDeadlineEntry(entry, state.events) : entry)
+      .filter(Boolean)
 
     syncMonthPicker(monthPicker, state.events, month)
     if (monthLabel) monthLabel.textContent = formatMonthLabel(month)
@@ -1310,7 +1324,7 @@
 
     list.innerHTML = ""
     if (!monthEntries.length) {
-      list.innerHTML = `<div class="ou-deadline-empty">${state.isLoading ? "Đang tải dữ liệu tháng này..." : "Không có deadline hoặc buổi VC/meeting trong tháng này."}</div>`
+      list.innerHTML = `<div class="ou-deadline-empty">${state.isLoading ? "Đang tải dữ liệu tháng này..." : state.hideCompleted ? "Không còn deadline hoặc buổi VC/meeting chưa thực hiện trong tháng này." : "Không có deadline hoặc buổi VC/meeting trong tháng này."}</div>`
       return
     }
 
@@ -1327,6 +1341,7 @@
     const events = state.events
       .filter((event) => !state.selectedCourse || event.course === state.selectedCourse)
       .filter((event) => !query || normalizeText(`${event.title} ${event.course}`).includes(query))
+      .filter((event) => !state.hideCompleted || !isDeadlineCompletedForFilter(event, state.events))
       .filter((event) => event?.date instanceof Date && !Number.isNaN(event.date.getTime()))
       .sort(compareEvents)
 
@@ -1612,6 +1627,24 @@
     return Boolean(event?.completed)
   }
 
+  function isDeadlineCompletedForFilter(event, allEvents) {
+    if (isDeadlineCompleted(event)) return true
+    const originalEvent = findOriginalDeadline(event, allEvents)
+    return Boolean(originalEvent && isDeadlineCompleted(originalEvent))
+  }
+
+  function filterCompletedDeadlineEntry(entry, allEvents) {
+    const visibleEvents = entry.events.filter((event) => !isDeadlineCompletedForFilter(event, allEvents))
+    if (!visibleEvents.length) return null
+    if (entry.type !== "group") return { ...entry, events: visibleEvents }
+    return {
+      ...entry,
+      base: visibleEvents[0],
+      extensions: visibleEvents.slice(1),
+      events: visibleEvents,
+    }
+  }
+
   function createDeadlineRow(event, allEvents) {
     const row = document.createElement("article")
     row.className = "ou-deadline-row"
@@ -1768,6 +1801,9 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { display: flex; flex: 1 1 auto; gap: 8px; min-width: 0; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter { position: relative; flex: 0 1 230px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { flex: 1 1 260px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 40px; padding: 0 4px; color: var(--ou-deadline-muted); cursor: pointer; font-size: 12px; white-space: nowrap; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter input { width: 16px; height: 16px; margin: 0; accent-color: var(--ou-deadline-brand); cursor: pointer; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter:hover { color: var(--ou-deadline-brand); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search input { width: 100%; min-height: 40px; padding: 9px 13px; border: 1px solid var(--ou-deadline-line); border-radius: 10px; background: #fff; color: var(--ou-deadline-ink); outline: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; font: inherit; text-align: left; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter.is-open .ou-deadline-course-trigger { border-color: rgba(82, 105, 199, .52); box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); }
@@ -1805,6 +1841,7 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-refresh:disabled { cursor: wait; opacity: .55; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-list { display: grid; gap: 8px; transition: opacity .16s ease; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-list-loading { opacity: .58; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-footer { display: flex; justify-content: flex-end; margin-top: 16px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row { display: grid; grid-template-columns: 24px 84px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--ou-deadline-line); border-radius: 14px; background: #fff; box-shadow: 0 4px 14px rgba(33, 49, 93, .045); transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease, opacity .16s ease; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row:hover { border-color: rgba(82, 105, 199, .34); box-shadow: 0 8px 20px rgba(33, 49, 93, .08); transform: translateY(-1px); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair { display: grid; gap: 0; overflow: hidden; border: 1px solid var(--ou-deadline-line); border-radius: 14px; background: #fff; box-shadow: 0 4px 14px rgba(33, 49, 93, .045); transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
@@ -1899,7 +1936,7 @@
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-hero, #${DEADLINE_DASHBOARD_ID} .ou-deadline-toolbar, #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { align-items: stretch; flex-direction: column; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { flex-basis: auto; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-month-nav { align-self: flex-start; }
-        #${DEADLINE_DASHBOARD_ID} .ou-deadline-export { align-self: flex-start; }
+        #${DEADLINE_DASHBOARD_ID} .ou-deadline-footer { justify-content: flex-start; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-sync-row { align-items: flex-start; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-stats { align-self: flex-start; text-align: left; }
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-row { grid-template-columns: 22px 66px minmax(0, 1fr); gap: 10px; }
