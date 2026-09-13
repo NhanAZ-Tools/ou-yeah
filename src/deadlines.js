@@ -1633,6 +1633,7 @@
     const isOverdueLocked = isOverdue && !isForum
     const isMeeting = event.kind === "meeting"
     const isExtension = isExtensionDeadline(event)
+    const isBaseDeadline = !isMeeting && !isExtension && !isOverdue && !isDueSoon
     const isTemporarilyRetained = isMeeting
       && event.temporary === true
       && Number(event.temporaryUntil) > Date.now()
@@ -1663,6 +1664,7 @@
     row.classList.toggle("ou-deadline-row-overdue", isOverdueLocked)
     row.classList.toggle("ou-deadline-row-overdue-actionable", isOverdue && isForum)
     row.classList.toggle("ou-deadline-row-due-soon", isDueSoon)
+    row.classList.toggle("ou-deadline-row-base", isBaseDeadline)
     row.classList.toggle("ou-deadline-row-extension-actionable", isExtensionActionable)
     row.classList.toggle("ou-deadline-row-extension-inactive", isInactiveExtension)
     row.innerHTML = `
@@ -1813,9 +1815,12 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-not-needed:hover { border-color: transparent; background: #eef0f2; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-overdue:hover { border-color: #e9a9a9; background: #fff5f5; box-shadow: none; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-overdue-actionable:hover { border-color: #e9a9a9; background: #fff5f5; box-shadow: none; transform: none; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-base:hover { border-color: transparent; background: #eef4ff; box-shadow: inset 3px 0 0 #5269c7; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-extension-actionable:hover { border-color: transparent; background: #fff1f1; box-shadow: inset 3px 0 0 #d96b6b; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-extension-inactive:hover { border-color: transparent; background: #eef0f2; box-shadow: inset 3px 0 0 #c9ced8; transform: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-completed { opacity: .82; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-base { border-color: #d7e3fb; background: linear-gradient(110deg, #f6f9ff, #fff); box-shadow: inset 3px 0 0 #5269c7, 0 5px 16px rgba(82, 105, 199, .06); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-base:hover { border-color: #a9bdf0; background: #eef4ff; box-shadow: inset 3px 0 0 #5269c7, 0 8px 20px rgba(82, 105, 199, .1); }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed { opacity: .78; background: #f4f5f7; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row-not-needed { background: #f4f5f7; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-not-needed .ou-deadline-date strong { color: #858d9d; }
