@@ -1025,6 +1025,12 @@
         box-shadow: 12px 0 32px rgba(24, 39, 75, 0.08);
       }
 
+      @media (min-width: 768px) {
+        body.ou-yeah-course-view #page.drawers.show-drawer-left {
+          margin-left: var(--ou-course-map-width) !important;
+        }
+      }
+
       body.ou-yeah-course-map-resizing,
       body.ou-yeah-course-map-resizing * {
         cursor: ew-resize !important;

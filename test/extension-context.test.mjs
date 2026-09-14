@@ -1057,6 +1057,7 @@ test("ELOLMS course view gets a compact Course Map", async () => {
   assert.match(source, /min-height: 36px !important;/)
   assert.match(source, /data-ou-course-map-kind-label/)
   assert.match(source, /width: min\(var\(--ou-course-map-width\), calc\(100vw - 24px\)\) !important;/)
+  assert.match(source, /body\.ou-yeah-course-view #page\.drawers\.show-drawer-left \{\s+margin-left: var\(--ou-course-map-width\) !important;/)
   assert.match(source, /padding: 8px 8px 16px !important;/)
   assert.match(source, /\.\$\{COURSE_MAP_RESIZE_HANDLE_CLASS\}/)
   assert.match(source, /z-index: 2147483647;/)
