@@ -12,7 +12,7 @@
   const DEADLINE_CACHE_PREFIX = "ouYeahDeadlineCacheV1"
   const DEADLINE_TIME_ZONE = "Asia/Ho_Chi_Minh"
   const DEADLINE_TIME_ZONE_OFFSET_MINUTES = 7 * 60
-  const DEADLINE_CACHE_VERSION = 1
+  const DEADLINE_CACHE_VERSION = 2
   const DEADLINE_CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000
   const DEADLINE_METADATA_TTL = 30 * 60 * 1000
   const COURSE_INDEX_TTL = 12 * 60 * 60 * 1000
@@ -678,7 +678,60 @@
       if (!response.ok) return { events: [], succeeded: false }
       const html = await response.text()
       const events = parseCourseDeadlines(html, courseUrl)
-      return { events, succeeded: true }
+      const forumUrls = parseCourseMeetingForumUrls(html, courseUrl)
+      const meetingSource = await fetchCourseMeetingEvents(forumUrls)
+      return {
+        events: mergeEvents(events, meetingSource.events),
+        succeeded: meetingSource.succeeded
+      }
+    } catch {
+      return { events: [], succeeded: false }
+    }
+  }
+
+  function parseCourseMeetingForumUrls(html, courseUrl) {
+    const doc = new DOMParser().parseFromString(html, "text/html")
+    const urls = new Set()
+
+    doc.querySelectorAll('a[href*="/mod/forum/view.php"]').forEach((link) => {
+      try {
+        const url = new URL(link.getAttribute("href") || "", courseUrl)
+        if (url.origin !== location.origin || url.pathname.toLowerCase() !== "/mod/forum/view.php") return
+        if (!url.searchParams.get("id")) return
+        url.hash = ""
+        urls.add(url.toString())
+      } catch {
+        // Ignore malformed forum links in course navigation.
+      }
+    })
+
+    return Array.from(urls)
+  }
+
+  async function fetchCourseMeetingEvents(forumUrls) {
+    if (!forumUrls.length) return { events: [], succeeded: true }
+
+    const results = await mapWithConcurrency(
+      forumUrls,
+      FORUM_DISCUSSION_CONCURRENCY,
+      async (forumUrl) => fetchCourseMeetingSource(forumUrl)
+    )
+
+    return {
+      events: mergeEvents(results.flatMap((result) => result.events), []),
+      succeeded: results.every((result) => result.succeeded)
+    }
+  }
+
+  async function fetchCourseMeetingSource(forumUrl) {
+    try {
+      const response = await fetch(forumUrl, { credentials: "include" })
+      if (!response.ok) return { events: [], succeeded: false }
+      const html = await response.text()
+      return {
+        events: parseCourseMeetingForumEvents(html, forumUrl),
+        succeeded: true
+      }
     } catch {
       return { events: [], succeeded: false }
     }
@@ -874,7 +927,7 @@
 
   function parseCourseDeadlines(html, courseUrl) {
     const doc = new DOMParser().parseFromString(html, "text/html")
-    const fallbackCourse = cleanText(doc.querySelector(".page-header-headings h1, header h1, h1")?.textContent || "Không rõ môn học")
+    const fallbackCourse = getCourseNameFromDocument(doc)
     const activityItems = Array.from(doc.querySelectorAll(".activity-item, li.activity, .activity"))
     const uniqueItems = activityItems.filter((item, index) => activityItems.indexOf(item) === index
       && !activityItems.some((parent) => parent !== item && parent.contains(item)))
@@ -889,7 +942,7 @@
       const titleElement = item.querySelector(".instancename, .activityname, h3, h4")
       const title = cleanEventTitle(titleElement?.textContent || titleLink?.textContent || "Deadline")
       const href = titleLink?.href ? new URL(titleLink.href, courseUrl).toString() : courseUrl
-      const course = cleanText(doc.querySelector(".page-header-headings h1, header h1")?.textContent || fallbackCourse)
+      const course = getCourseNameFromDocument(doc, fallbackCourse)
       const completed = needsRemoteCompletionCheck(href) ? false : detectActivityCompletion(item)
 
       for (const match of text.matchAll(deadlinePattern)) {
@@ -918,6 +971,97 @@
     })
 
     return events
+  }
+
+  function parseCourseMeetingForumEvents(html, forumUrl) {
+    const doc = new DOMParser().parseFromString(html, "text/html")
+    const fallbackCourse = getCourseNameFromDocument(doc)
+    const candidates = Array.from(doc.querySelectorAll(
+      '[data-region="discussion-list-item"], tr.discussion, .discussion'
+    ))
+    const discussionItems = candidates.filter((item, index) => candidates.indexOf(item) === index
+      && !candidates.some((parent) => parent !== item && parent.contains(item)))
+    const events = []
+
+    discussionItems.forEach((item) => {
+      const titleLink = /** @type {HTMLAnchorElement | null} */ (
+        item.querySelector('a[href*="/mod/forum/discuss.php"]')
+      )
+      const titleText = cleanText([
+        titleLink?.textContent,
+        titleLink?.getAttribute("title"),
+        titleLink?.getAttribute("aria-label"),
+        item.textContent
+      ].filter(Boolean).join(" "))
+      if (!isMeetingText(titleText)) return
+
+      const schedule = parseMeetingSchedule(titleText)
+      if (!schedule) return
+      const date = createHanoiDate(
+        schedule.year,
+        schedule.month - 1,
+        schedule.day,
+        schedule.hour,
+        schedule.minute
+      )
+      if (Number.isNaN(date.getTime())) return
+
+      const title = cleanMeetingTitle(titleLink?.textContent || "Video conference") || "Video conference"
+      events.push({
+        title,
+        course: getCourseNameFromDocument(doc, fallbackCourse),
+        date,
+        dateLabel: formatDate(date),
+        time: formatTime(date),
+        href: forumUrl,
+        kind: "meeting",
+        completed: detectActivityCompletion(item),
+        source: item
+      })
+    })
+
+    return events
+  }
+
+  function getCourseNameFromDocument(doc, fallback = "Không rõ môn học") {
+    const courseLink = doc.querySelector('a[href*="/course/view.php"]')
+    const heading = doc.querySelector(".page-header-headings h1, header h1, h1")
+    return cleanText(courseLink?.textContent || heading?.textContent || fallback)
+  }
+
+  function parseMeetingSchedule(value) {
+    const text = cleanText(value)
+    const slashMatch = text.match(
+      /(?:^|\s|\(|\[)\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\s*(?:[,;:–—-]|\s)\s*(\d{1,2})(?::|[hHgG])(\d{2})(?:\s*(AM|PM|SA|CH|A\.M\.|P\.M\.))?/i
+    )
+    if (slashMatch) return createMeetingSchedule(slashMatch, 1, 2, 3, 4, 5, 6)
+
+    const localizedMatch = text.match(
+      /(?:^|\s|\(|\[)\s*(\d{1,2})\s+tháng\s+(\d{1,2})\s+(\d{4})\s*(?:[,;:–—-]|\s)\s*(\d{1,2}):(\d{2})(?:\s*(AM|PM|SA|CH|A\.M\.|P\.M\.))?/i
+    )
+    if (localizedMatch) return createMeetingSchedule(localizedMatch, 1, 2, 3, 4, 5, 6)
+
+    return null
+  }
+
+  function createMeetingSchedule(match, dayIndex, monthIndex, yearIndex, hourIndex, minuteIndex, meridiemIndex) {
+    const hour = to24Hour(match[hourIndex], match[meridiemIndex])
+    const minute = Number(match[minuteIndex])
+    if (hour === null || !Number.isInteger(minute) || minute < 0 || minute > 59) return null
+    return {
+      day: Number(match[dayIndex]),
+      month: Number(match[monthIndex]),
+      year: Number(match[yearIndex]),
+      hour,
+      minute
+    }
+  }
+
+  function cleanMeetingTitle(value) {
+    return cleanEventTitle(value)
+      .replace(/\s*\([^)]*\)\s*$/, "")
+      .replace(/\s*\[[^\]]*\]\s*$/, "")
+      .trim()
   }
 
   function detectActivityCompletion(item) {
@@ -1007,10 +1151,12 @@
     }
   }
 
+  function isMeetingText(value) {
+    return /video\s*conference|google\s*meet|zoom|meeting|\bvc\s*\d+\b|hop\s+truc\s+tuyen|truc\s+tuyen/i.test(normalizeText(value))
+  }
+
   function classifyEventKind(title) {
-    return /video conference|google meet|zoom|meeting|\bvc\s*\d+\b/i.test(normalizeText(title))
-      ? "meeting"
-      : "deadline"
+    return isMeetingText(title) ? "meeting" : "deadline"
   }
 
   function compareEvents(left, right) {
