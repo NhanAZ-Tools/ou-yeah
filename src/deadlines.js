@@ -341,14 +341,38 @@
     courseEvents.concat(nativeEvents).forEach((event) => {
       if (!(event?.date instanceof Date)) return
       const key = eventIdentityKey(event)
-      if (!unique.has(key)) unique.set(key, event)
+      const existing = unique.get(key)
+      unique.set(key, existing ? mergeDuplicateEvents(existing, event) : event)
     })
 
     return Array.from(unique.values()).sort(compareEvents)
   }
 
   function eventIdentityKey(event) {
-    return `${event.date.getTime()}|${normalizeText(event.title)}|${normalizeText(event.course)}`
+    const resource = normalizeText(event.href)
+    return resource
+      ? `${event.date.getTime()}|${normalizeText(event.course)}|${resource}`
+      : `${event.date.getTime()}|${normalizeText(event.title)}|${normalizeText(event.course)}`
+  }
+
+  function mergeDuplicateEvents(existing, incoming) {
+    const existingTitle = normalizeText(existing.title)
+    const incomingTitle = normalizeText(incoming.title)
+    const preferred = incomingTitle.length > existingTitle.length ? incoming : existing
+
+    return {
+      ...preferred,
+      completed: existing.completed === true || incoming.completed === true,
+      completionCheckedAt: Math.max(
+        Number(existing.completionCheckedAt) || 0,
+        Number(incoming.completionCheckedAt) || 0
+      ),
+      temporary: existing.temporary === true || incoming.temporary === true,
+      temporaryUntil: Math.max(
+        Number(existing.temporaryUntil) || 0,
+        Number(incoming.temporaryUntil) || 0
+      )
+    }
   }
 
   function retainMissingMeetingsTemporarily(events, knownMeetings) {
