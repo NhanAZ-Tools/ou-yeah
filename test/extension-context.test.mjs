@@ -1456,10 +1456,13 @@ test("forum exporter writes Markdown, JSON and local images into a real ZIP layo
   assert.match(source, /application\/zip/)
 })
 
-test("practice quiz trainer scans until the question bank stabilizes and exports an AI-ready answer bank", async () => {
+test("practice quiz trainer scans until the question bank stabilizes without downloading until requested", async () => {
   const source = await readFile(new URL("../src/quiz-trainer.js", import.meta.url), "utf8")
   const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"))
   const releaseScript = await readFile(new URL("../scripts/release.ps1", import.meta.url), "utf8")
+  const completeRunStart = source.indexOf("async function completeRun(state)")
+  const completeRunEnd = source.indexOf("function shouldComplete(state)", completeRunStart)
+  const completeRunSource = source.slice(completeRunStart, completeRunEnd)
 
   assert.ok(manifest.content_scripts[0].js.includes("src/quiz-trainer.js"))
   assert.match(releaseScript, /src\/quiz-trainer\.js/)
@@ -1488,6 +1491,8 @@ test("practice quiz trainer scans until the question bank stabilizes and exports
   assert.match(source, /latestState\?\.status === "exporting"/)
   assert.match(source, /state\.status = "exporting"/)
   assert.match(source, /state\.status = "complete"/)
+  assert.doesNotMatch(completeRunSource, /exportQuizBank\(state\)/)
+  assert.match(completeRunSource, /Bấm “Tải bộ đề” nếu muốn tạo ZIP/)
   assert.match(source, /window\.addEventListener\("beforeunload", warnBeforeLeavingQuiz\)/)
   assert.match(source, /event\.returnValue = ""/)
   assert.match(source, /navigateMainPage\(state\.viewUrl\)/)

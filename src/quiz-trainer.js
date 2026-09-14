@@ -703,16 +703,8 @@
     const reason = state.stopReason === "safety-limit"
       ? `đã chạm trần an toàn ${state.maxAttempts} lượt`
       : `${NO_NEW_QUESTION_STREAK_LIMIT} lượt liên tiếp không có câu mới`
-    state.status = "exporting"
-    state.message = `Đã quét xong sau ${state.completedAttempts} lượt (${reason}) · đang tạo ZIP gồm ${state.questions.length} câu...`
-    state.updatedAt = new Date().toISOString()
-    await saveState(state)
-    latestState = state
-    renderPanel(state)
-
-    await exportQuizBank(state)
     state.status = "complete"
-    state.message = `Đã tải bộ ôn tập gồm ${state.questions.length} câu.`
+    state.message = `Đã quét xong sau ${state.completedAttempts} lượt (${reason}) · đã gom ${state.questions.length} câu. Bấm “Tải bộ đề” nếu muốn tạo ZIP.`
     state.updatedAt = new Date().toISOString()
     await saveState(state)
     latestState = state
