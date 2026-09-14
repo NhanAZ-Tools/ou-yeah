@@ -10,6 +10,8 @@
   const DEADLINE_LOADING_ID = "ou-yeah-deadline-loading"
   const DEADLINE_STYLE_ID = "ou-yeah-deadline-theme"
   const DEADLINE_CACHE_PREFIX = "ouYeahDeadlineCacheV1"
+  const DEADLINE_TIME_ZONE = "Asia/Ho_Chi_Minh"
+  const DEADLINE_TIME_ZONE_OFFSET_MINUTES = 7 * 60
   const DEADLINE_CACHE_VERSION = 1
   const DEADLINE_CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000
   const DEADLINE_METADATA_TTL = 30 * 60 * 1000
@@ -23,6 +25,16 @@
   const REQUEST_CONCURRENCY = 4
   const FORUM_DISCUSSION_CONCURRENCY = 3
   const BRAND = "#5269c7"
+  const DEADLINE_HANOI_PARTS_FORMATTER = new Intl.DateTimeFormat("en-US", {
+    timeZone: DEADLINE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  })
 
   if (location.hostname !== ELOLMS_HOST || window.top !== window.self) return
 
@@ -633,7 +645,8 @@
     return new Intl.DateTimeFormat("vi-VN", {
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false
+      hour12: false,
+      timeZone: DEADLINE_TIME_ZONE
     }).format(new Date(timestamp))
   }
 
@@ -882,7 +895,7 @@
       for (const match of text.matchAll(deadlinePattern)) {
         const hour = to24Hour(match[4], match[6])
         if (hour === null) continue
-        const date = new Date(
+        const date = createHanoiDate(
           Number(match[3]),
           Number(match[2]) - 1,
           Number(match[1]),
@@ -1017,7 +1030,8 @@
       hideCompleted: false,
       loadedMonths: new Set([monthKey(getInitialMonth(events))]),
       isLoading: false,
-      isSyncing: false
+      isSyncing: false,
+      countdownTimer: 0
     }
     deadlineDashboardStates.set(dashboard, state)
 
@@ -1128,6 +1142,7 @@
         setDeadlineSyncStatus(dashboard, "Không thể đồng bộ lúc này · đang hiển thị dữ liệu gần nhất")
       })
     })
+    startDeadlineCountdown(dashboard)
 
     return dashboard
   }
@@ -1156,6 +1171,50 @@
     button.textContent = isBusy ? "Đang đồng bộ..." : "Đồng bộ lại"
   }
 
+  function startDeadlineCountdown(dashboard) {
+    const state = deadlineDashboardStates.get(dashboard)
+    if (!state || state.countdownTimer) return
+
+    state.countdownTimer = window.setInterval(() => {
+      if (!document.documentElement.contains(dashboard)) {
+        window.clearInterval(state.countdownTimer)
+        state.countdownTimer = 0
+        return
+      }
+      updateDeadlineCountdowns(dashboard)
+    }, 1000)
+  }
+
+  function updateDeadlineCountdowns(dashboard) {
+    const state = deadlineDashboardStates.get(dashboard)
+    if (!state) return
+
+    const now = Date.now()
+    let shouldRender = false
+    dashboard.querySelectorAll("[data-ou-deadline-countdown]").forEach((element) => {
+      const deadlineTime = Number(element.getAttribute("data-deadline-time"))
+      if (!Number.isFinite(deadlineTime)) return
+      const remaining = deadlineTime - now
+      if (remaining <= 0) {
+        shouldRender = true
+        return
+      }
+      element.textContent = `Còn ${formatDeadlineCountdown(remaining)}`
+    })
+
+    if (shouldRender) renderDeadlineMonth(dashboard, state)
+  }
+
+  function formatDeadlineCountdown(milliseconds) {
+    const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000))
+    const days = Math.floor(totalSeconds / 86400)
+    const hours = Math.floor((totalSeconds % 86400) / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    const clock = `${String(hours).padStart(2, "0")} giờ ${String(minutes).padStart(2, "0")} phút ${String(seconds).padStart(2, "0")} giây`
+    return days ? `${days} ngày ${clock}` : clock
+  }
+
   function getInitialMonth(events) {
     const now = new Date()
     const firstUpcoming = events
@@ -1165,15 +1224,21 @@
   }
 
   function startOfMonth(date) {
-    return new Date(date.getFullYear(), date.getMonth(), 1)
+    const parts = getHanoiDateParts(date)
+    return createHanoiDate(parts.year, parts.month - 1, 1)
   }
 
   function monthKey(date) {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+    const parts = getHanoiDateParts(date)
+    return `${parts.year}-${String(parts.month).padStart(2, "0")}`
   }
 
   function formatMonthLabel(date) {
-    const label = new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric" }).format(date)
+    const label = new Intl.DateTimeFormat("vi-VN", {
+      month: "long",
+      year: "numeric",
+      timeZone: DEADLINE_TIME_ZONE
+    }).format(date)
     return label.charAt(0).toUpperCase() + label.slice(1)
   }
 
@@ -1190,7 +1255,7 @@
     const selectedKey = monthKey(selectedMonth)
 
     menu.innerHTML = ""
-    for (let date = earliest; date <= latest; date = new Date(date.getFullYear(), date.getMonth() + 1, 1)) {
+    for (let date = earliest; date <= latest; date = addHanoiMonths(date, 1)) {
       appendMonthOption(menu, monthKey(date), formatMonthLabel(date), selectedKey)
     }
 
@@ -1384,7 +1449,7 @@
     if (!(list instanceof HTMLElement)) return
 
     const month = startOfMonth(state.selectedMonth)
-    const nextMonth = new Date(month.getFullYear(), month.getMonth() + 1, 1)
+    const nextMonth = addHanoiMonths(month, 1)
     const query = normalizeText(state.query)
     const monthEntries = buildDeadlineEntries(state.events)
       .filter((entry) => entry.events.some((event) => event.date >= month && event.date < nextMonth))
@@ -1438,7 +1503,7 @@
     const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" })
     const blobUrl = URL.createObjectURL(blob)
     const link = document.createElement("a")
-    const dateStamp = new Date().toISOString().slice(0, 10)
+    const dateStamp = formatHanoiDateStamp(new Date())
     link.href = blobUrl
     link.download = `ou-yeah-deadlines-all-${dateStamp}.ics`
     link.style.display = "none"
@@ -1523,7 +1588,8 @@
   }
 
   function formatIcsLocalDate(date) {
-    return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}${String(date.getSeconds()).padStart(2, "0")}`
+    const parts = getHanoiDateParts(date)
+    return `${parts.year}${String(parts.month).padStart(2, "0")}${String(parts.day).padStart(2, "0")}T${String(parts.hour).padStart(2, "0")}${String(parts.minute).padStart(2, "0")}${String(parts.second).padStart(2, "0")}`
   }
 
   function formatIcsUtcDate(date) {
@@ -1574,7 +1640,7 @@
     const match = /^(\d{4})-(\d{2})$/.exec(value)
     if (!match) return
 
-    const selectedMonth = new Date(Number(match[1]), Number(match[2]) - 1, 1)
+    const selectedMonth = createHanoiDate(Number(match[1]), Number(match[2]) - 1, 1)
     if (monthKey(selectedMonth) === monthKey(state.selectedMonth)) return
 
     state.selectedMonth = selectedMonth
@@ -1607,7 +1673,7 @@
 
   async function navigateDeadlineMonth(dashboard, state, offset) {
     if (state.isLoading) return
-    state.selectedMonth = new Date(state.selectedMonth.getFullYear(), state.selectedMonth.getMonth() + offset, 1)
+    state.selectedMonth = addHanoiMonths(state.selectedMonth, offset)
     state.isLoading = true
     renderDeadlineMonth(dashboard, state)
     syncCourseFilter(dashboard.querySelector("[data-ou-deadline-course-filter]"), state.events)
@@ -1753,6 +1819,14 @@
     const isTemporarilyRetained = isMeeting
       && event.temporary === true
       && Number(event.temporaryUntil) > Date.now()
+    const isTodayPending = !isMeeting
+      && !isCompleted
+      && !extensionNotNeeded
+      && !isInactiveExtension
+      && isSameHanoiDay(event.date, new Date(now))
+    const countdownMarkup = isTodayPending && eventTime > now
+      ? `<span class="ou-deadline-countdown" data-ou-deadline-countdown data-deadline-time="${eventTime}" title="Đếm ngược theo múi giờ UTC+7 · Hạn ${escapeAttribute(`${formatDate(event.date)} ${event.time}`)}">Còn ${formatDeadlineCountdown(eventTime - now)}</span>`
+      : ""
     const typeLabel = isMeeting ? "VC / MEETING" : isExtension ? "GIA HẠN" : "DEADLINE"
     const typeClass = isMeeting ? "ou-deadline-type-meeting" : isExtension ? "ou-deadline-type-extension" : ""
     const temporaryTooltip = isTemporarilyRetained ? getTemporaryMeetingTooltip(event) : ""
@@ -1780,6 +1854,7 @@
     row.classList.toggle("ou-deadline-row-overdue", isOverdueLocked)
     row.classList.toggle("ou-deadline-row-overdue-actionable", isOverdue && isForum)
     row.classList.toggle("ou-deadline-row-due-soon", isDueSoon)
+    row.classList.toggle("ou-deadline-row-today-pending", isTodayPending)
     row.classList.toggle("ou-deadline-row-base", isBaseDeadline)
     row.classList.toggle("ou-deadline-row-extension-actionable", isExtensionActionable)
     row.classList.toggle("ou-deadline-row-extension-inactive", isInactiveExtension)
@@ -1797,7 +1872,7 @@
       <div class="ou-deadline-content">
         <div class="ou-deadline-meta"><span class="ou-deadline-course">${escapeHtml(event.course)}</span><span class="ou-deadline-type ${typeClass}">${typeLabel}</span>${statusMarkup}${temporaryMarkup}</div>
         <h3>${event.href ? `<a href="${escapeAttribute(event.href)}">${escapeHtml(event.title)}</a>` : escapeHtml(event.title)}</h3>
-        <p>${escapeHtml(event.dateLabel || formatDate(event.date))} · ${event.time}</p>
+        <p>${escapeHtml(event.dateLabel || formatDate(event.date))} · ${event.time}${countdownMarkup}</p>
       </div>
       ${event.href ? `<a class="ou-deadline-open" href="${escapeAttribute(event.href)}">Mở bài<span aria-hidden="true"> ↗</span></a>` : ""}
     `
@@ -1982,6 +2057,12 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-content h3 a { color: #737b89; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-content p { color: #8d95a4; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-type-extension { background: #eef0f4; color: #70798a; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-today-pending { border-color: #c94a55; background: linear-gradient(110deg, #fff0f1, #fff); box-shadow: inset 3px 0 0 #a92331, 0 5px 16px rgba(169, 35, 49, .12); opacity: 1; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-today-pending:hover { border-color: #b83240; background: #ffe7e9; box-shadow: inset 3px 0 0 #981d2a, 0 8px 20px rgba(169, 35, 49, .16); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-today-pending { border-color: transparent; background: linear-gradient(110deg, #fff0f1, #fff); box-shadow: inset 3px 0 0 #a92331; opacity: 1; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-today-pending:hover { border-color: transparent; background: #ffe7e9; box-shadow: inset 3px 0 0 #981d2a; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-today-pending .ou-deadline-date strong { color: #a92331; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-today-pending .ou-deadline-countdown { color: #981d2a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check { display: inline-grid; width: 22px; height: 22px; place-items: center; cursor: default; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check input { position: absolute; width: 1px; height: 1px; opacity: 0; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check input + span { position: relative; display: block; width: 18px; height: 18px; border: 1.5px solid #c8d0e2; border-radius: 6px; background: #fff; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
@@ -2018,6 +2099,7 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-content h3 a { color: var(--ou-deadline-ink); text-decoration: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-content h3 a:hover { color: var(--ou-deadline-brand); text-decoration: underline; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-content p { margin: 4px 0 0; color: var(--ou-deadline-muted); font-size: 12px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-countdown { display: inline-block; margin-left: 8px; color: #a92331; font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 750; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-open { white-space: nowrap; color: var(--ou-deadline-brand); font-size: 12px; font-weight: 750; text-decoration: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-open:hover { text-decoration: underline; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-empty { padding: 32px; border: 1px dashed var(--ou-deadline-line); border-radius: 14px; background: var(--ou-deadline-soft); color: var(--ou-deadline-muted); text-align: center; }
@@ -2045,6 +2127,38 @@
     return String(value || "").replace(/\s+/g, " ").trim()
   }
 
+  function getHanoiDateParts(date) {
+    const parts = DEADLINE_HANOI_PARTS_FORMATTER.formatToParts(date)
+    const values = {}
+    parts.forEach((part) => {
+      if (part.type !== "literal") values[part.type] = Number(part.value)
+    })
+    return values
+  }
+
+  function createHanoiDate(year, monthIndex, day, hour = 0, minute = 0, second = 0) {
+    return new Date(Date.UTC(year, monthIndex, day, hour, minute, second)
+      - DEADLINE_TIME_ZONE_OFFSET_MINUTES * 60 * 1000)
+  }
+
+  function addHanoiMonths(date, offset) {
+    const parts = getHanoiDateParts(date)
+    return createHanoiDate(parts.year, parts.month - 1 + offset, 1)
+  }
+
+  function isSameHanoiDay(left, right) {
+    const leftParts = getHanoiDateParts(left)
+    const rightParts = getHanoiDateParts(right)
+    return leftParts.year === rightParts.year
+      && leftParts.month === rightParts.month
+      && leftParts.day === rightParts.day
+  }
+
+  function formatHanoiDateStamp(date) {
+    const parts = getHanoiDateParts(date)
+    return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`
+  }
+
   function normalizeText(value) {
     return cleanText(value)
       .normalize("NFD")
@@ -2055,19 +2169,25 @@
   }
 
   function formatDay(date) {
-    return new Intl.DateTimeFormat("vi-VN", { day: "2-digit" }).format(date)
+    return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", timeZone: DEADLINE_TIME_ZONE }).format(date)
   }
 
   function formatMonth(date) {
-    return new Intl.DateTimeFormat("vi-VN", { month: "short" }).format(date).replace(".", "")
+    return new Intl.DateTimeFormat("vi-VN", { month: "short", timeZone: DEADLINE_TIME_ZONE }).format(date).replace(".", "")
   }
 
   function formatDate(date) {
-    return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date)
+    return new Intl.DateTimeFormat("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: DEADLINE_TIME_ZONE
+    }).format(date)
   }
 
   function formatTime(date) {
-    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
+    const parts = getHanoiDateParts(date)
+    return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`
   }
 
   function to24Hour(hourText, meridiem) {
