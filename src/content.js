@@ -595,7 +595,10 @@
 
   function ensureCourseMapTools(drawer, courseIndex) {
     let tools = drawer.querySelector(`#${COURSE_MAP_TOOLS_ID}`)
-    if (tools) return tools
+    if (tools) {
+      ensureCourseMapProgress(drawer, tools)
+      return tools
+    }
 
     tools = document.createElement("section")
     tools.id = COURSE_MAP_TOOLS_ID
@@ -605,18 +608,25 @@
           <span class="ou-course-map-kicker">OU Yeah!</span>
           <h2>Course Map</h2>
         </div>
-        <button type="button" data-course-map-action="current">Đang xem</button>
+        <div class="ou-course-map-heading-actions">
+          <button type="button" data-course-map-action="current">Đang xem</button>
+          <button type="button" data-course-map-action="close" aria-label="Đóng Course Map">Đóng</button>
+        </div>
       </div>
       <label class="ou-course-map-search">
         <span>Tìm nhanh trong mục lục</span>
         <input type="search" placeholder="Chương, video, slide, bài tập..." autocomplete="off" spellcheck="false">
       </label>
+      <div class="ou-course-map-actions" role="group" aria-label="Điều khiển mục lục">
+        <button type="button" data-course-map-action="toggle-all" aria-label="Mở rộng tất cả" aria-pressed="false">Mở rộng tất cả</button>
+      </div>
       <div class="ou-course-map-stats" aria-live="polite">
         <span data-course-map-stat="sections">0 mục</span>
         <span data-course-map-stat="modules">0 tài nguyên</span>
         <span data-course-map-stat="progress">Theo dõi tiến độ</span>
       </div>
     `
+    ensureCourseMapProgress(drawer, tools)
 
     const input = tools.querySelector("input")
     if (input instanceof HTMLInputElement) {
@@ -629,9 +639,91 @@
         block: "center"
       })
     })
+    tools.querySelector("[data-course-map-action='close']")?.addEventListener("click", () => {
+      closeCourseMapDrawer(drawer)
+    })
+    tools.querySelector("[data-course-map-action='toggle-all']")?.addEventListener("click", () => {
+      setAllCourseMapSectionsExpanded(courseIndex, !areAllCourseMapSectionsExpanded(courseIndex))
+    })
 
     courseIndex.parentElement?.insertBefore(tools, courseIndex)
     return tools
+  }
+
+  function closeCourseMapDrawer(drawer) {
+    const closeButton = drawer.querySelector("[data-action='closedrawer']")
+    if (closeButton instanceof HTMLElement) {
+      closeButton.click()
+    }
+  }
+
+  function ensureCourseMapProgress(drawer, tools) {
+    const progressBar = drawer.querySelector(".drawerheader .progress")
+    const progress = progressBar?.parentElement
+    if (!(progress instanceof HTMLElement)) return null
+
+    progress.classList.add("ou-course-map-progress")
+    if (progress.parentElement !== tools) {
+      tools.querySelector(".ou-course-map-heading")?.after(progress)
+    }
+    return progress
+  }
+
+  function setAllCourseMapSectionsExpanded(courseIndex, expanded) {
+    if (!(courseIndex instanceof HTMLElement)) return
+
+    const toggles = getCourseMapSectionToggles(courseIndex)
+
+    toggles.forEach((toggle) => {
+      if (isCourseSectionToggleOpen(toggle) !== expanded) setCourseMapSectionExpanded(toggle, expanded)
+    })
+
+    const drawer = courseIndex.closest("#theme_boost-drawers-courseindex")
+    const tools = drawer?.querySelector(`#${COURSE_MAP_TOOLS_ID}`)
+    if (tools instanceof HTMLElement) updateCourseMapBulkToggle(courseIndex, tools)
+
+    scheduleCourseMapRefresh()
+    window.setTimeout(refreshCourseMap, 80)
+    window.setTimeout(refreshCourseMap, 260)
+    window.setTimeout(refreshCourseMap, 620)
+  }
+
+  function setCourseMapSectionExpanded(toggle, expanded) {
+    const target = collapseTargetForToggle(toggle)
+    if (target instanceof HTMLElement) {
+      target.classList.remove("collapsing")
+      target.classList.add("collapse")
+      target.classList.toggle("show", expanded)
+      target.style.removeProperty("height")
+      target.style.removeProperty("overflow")
+      target.style.removeProperty("transition")
+    }
+
+    toggle.classList.toggle("collapsed", !expanded)
+    toggle.setAttribute("aria-expanded", String(expanded))
+  }
+
+  function getCourseMapSectionToggles(courseIndex) {
+    return Array.from(courseIndex.querySelectorAll(
+      "[data-for='section'] > [data-for='section_item'] [data-toggle='collapse'], " +
+      "[data-for='section'] > [data-for='section_item'] [data-bs-toggle='collapse']"
+    )).filter((toggle) => toggle instanceof HTMLElement)
+  }
+
+  function areAllCourseMapSectionsExpanded(courseIndex) {
+    const toggles = getCourseMapSectionToggles(courseIndex)
+    return toggles.length > 0 && toggles.every((toggle) => isCourseSectionToggleOpen(toggle))
+  }
+
+  function updateCourseMapBulkToggle(courseIndex, tools) {
+    const toggle = tools.querySelector("[data-course-map-action='toggle-all']")
+    if (!(toggle instanceof HTMLButtonElement)) return
+
+    const allExpanded = areAllCourseMapSectionsExpanded(courseIndex)
+    const label = allExpanded ? "Thu gọn tất cả" : "Mở rộng tất cả"
+    toggle.textContent = label
+    toggle.setAttribute("aria-label", label)
+    toggle.setAttribute("aria-pressed", String(allExpanded))
   }
 
   function annotateCourseMap(courseIndex) {
@@ -870,6 +962,7 @@
     if (sectionStat) sectionStat.textContent = `${sectionCount} mục`
     if (moduleStat) moduleStat.textContent = `${moduleCount} tài nguyên`
     if (progressStat) progressStat.textContent = progress ? `${progress[1] || progress[2]}% hoàn tất` : "Course Map"
+    updateCourseMapBulkToggle(courseIndex, tools)
   }
 
   function applyCourseMapFilter(courseIndex, query) {
@@ -1025,6 +1118,43 @@
         box-shadow: 12px 0 32px rgba(24, 39, 75, 0.08);
       }
 
+      body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .drawerheader {
+        display: none !important;
+      }
+
+      body.ou-yeah-course-view [data-toggler="drawers"][data-action="toggle"][data-target="theme_boost-drawers-courseindex"] {
+        display: inline-grid !important;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        margin: 6px 0 6px 8px !important;
+        padding: 0 !important;
+        border: 1px solid rgba(82, 105, 199, 0.24) !important;
+        border-radius: 12px !important;
+        background: #eef1ff !important;
+        color: var(--ou-course-brand) !important;
+        box-shadow: 0 5px 14px rgba(82, 105, 199, 0.12);
+        transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+      }
+
+      body.ou-yeah-course-view [data-toggler="drawers"][data-action="toggle"][data-target="theme_boost-drawers-courseindex"]:hover {
+        border-color: rgba(82, 105, 199, 0.42) !important;
+        background: #e2e8ff !important;
+        box-shadow: 0 7px 16px rgba(82, 105, 199, 0.18);
+        transform: translateY(-1px);
+      }
+
+      body.ou-yeah-course-view [data-toggler="drawers"][data-action="toggle"][data-target="theme_boost-drawers-courseindex"]:focus-visible {
+        outline: 3px solid rgba(82, 105, 199, 0.25);
+        outline-offset: 2px;
+      }
+
+      body.ou-yeah-course-view [data-toggler="drawers"][data-action="toggle"][data-target="theme_boost-drawers-courseindex"] .icon {
+        margin: 0 !important;
+        font-size: 16px;
+      }
+
       @media (min-width: 768px) {
         body.ou-yeah-course-view #page.drawers.show-drawer-left {
           margin-left: var(--ou-course-map-width) !important;
@@ -1074,6 +1204,10 @@
       }
 
       body.ou-yeah-course-view #theme_boost-drawers-courseindex.ou-yeah-course-map-drawer .drawercontent {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden !important;
         padding: 8px 8px 16px !important;
       }
 
@@ -1109,18 +1243,19 @@
       }
 
       #${COURSE_MAP_TOOLS_ID} {
-        position: sticky;
-        top: 0;
-        z-index: 5;
+        position: relative;
+        flex: 0 0 auto;
+        z-index: 20;
         display: grid;
         gap: 6px;
         margin: 0 2px 8px;
         padding: 8px 9px;
         border: 1px solid var(--ou-course-line);
         border-radius: 10px;
-        background: rgba(255, 255, 255, 0.94);
+        background: #fff;
         box-shadow: 0 6px 14px rgba(24, 39, 75, 0.06);
         backdrop-filter: blur(10px);
+        isolation: isolate;
       }
 
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-heading {
@@ -1128,6 +1263,12 @@
         align-items: center;
         justify-content: space-between;
         gap: 8px;
+      }
+
+      #${COURSE_MAP_TOOLS_ID} .ou-course-map-heading-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
       }
 
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-kicker {
@@ -1146,6 +1287,32 @@
         line-height: 1.05;
       }
 
+      #${COURSE_MAP_TOOLS_ID} .ou-course-map-progress {
+        display: grid;
+        gap: 4px;
+        margin: 0 !important;
+      }
+
+      #${COURSE_MAP_TOOLS_ID} .ou-course-map-progress .text-muted {
+        color: var(--ou-course-muted) !important;
+        font-size: 10px;
+        line-height: 1.1;
+      }
+
+      #${COURSE_MAP_TOOLS_ID} .ou-course-map-progress .progress {
+        height: 7px;
+        margin: 0;
+        overflow: hidden;
+        border: 1px solid #e0e4eb !important;
+        border-radius: 999px;
+        background: #f0f2f5;
+      }
+
+      #${COURSE_MAP_TOOLS_ID} .ou-course-map-progress .progress-bar {
+        border-radius: inherit;
+        background: var(--ou-course-brand);
+      }
+
       #${COURSE_MAP_TOOLS_ID} button {
         min-height: 25px;
         padding: 0 8px;
@@ -1161,6 +1328,17 @@
       #${COURSE_MAP_TOOLS_ID} button:hover {
         border-color: #bdc7e4;
         background: #f3f5fc;
+      }
+
+      #${COURSE_MAP_TOOLS_ID} button[data-course-map-action="close"] {
+        border-color: #c93636;
+        background: #d64545;
+        color: #fff;
+      }
+
+      #${COURSE_MAP_TOOLS_ID} button[data-course-map-action="close"]:hover {
+        border-color: #aa2929;
+        background: #b83232;
       }
 
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-search {
@@ -1195,6 +1373,19 @@
         box-shadow: 0 0 0 3px rgba(82, 105, 199, 0.12);
       }
 
+      #${COURSE_MAP_TOOLS_ID} .ou-course-map-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+      }
+
+      #${COURSE_MAP_TOOLS_ID} .ou-course-map-actions button {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       #${COURSE_MAP_TOOLS_ID} .ou-course-map-stats {
         display: flex;
         flex-wrap: wrap;
@@ -1213,6 +1404,11 @@
       }
 
       #courseindex.ou-yeah-course-map {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
         padding: 0 !important;
         color: var(--ou-course-ink);
       }
