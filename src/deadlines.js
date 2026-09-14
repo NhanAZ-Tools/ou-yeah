@@ -12,7 +12,7 @@
   const DEADLINE_CACHE_PREFIX = "ouYeahDeadlineCacheV1"
   const DEADLINE_TIME_ZONE = "Asia/Ho_Chi_Minh"
   const DEADLINE_TIME_ZONE_OFFSET_MINUTES = 7 * 60
-  const DEADLINE_CACHE_VERSION = 2
+  const DEADLINE_CACHE_VERSION = 4
   const DEADLINE_CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000
   const DEADLINE_METADATA_TTL = 30 * 60 * 1000
   const COURSE_INDEX_TTL = 12 * 60 * 60 * 1000
@@ -256,7 +256,10 @@
   async function synchronizeDeadlineDashboard(dashboard, nativeEvents, forceMetadata) {
     const cache = await readDeadlineCache()
     const cachedEvents = cache.events
-    let events = applyCachedCompletion(mergeEvents(cachedEvents, nativeEvents), cachedEvents)
+    let events = filterEventsToCourseUrls(
+      applyCachedCompletion(mergeEvents(cachedEvents, nativeEvents), cachedEvents),
+      cache.courseUrls
+    )
     let metadataUpdatedAt = cache.metadataUpdatedAt
     let courseUrls = cache.courseUrls
     let courseUrlsUpdatedAt = cache.courseUrlsUpdatedAt
@@ -289,8 +292,13 @@
       metadataFullyUpdated = metadata.courseIndexSucceeded
         && metadata.successfulSources === metadata.totalSources
       if (metadataFullyUpdated) metadataUpdatedAt = Date.now()
-      const metadataFallback = metadataFullyUpdated ? nativeEvents : mergeEvents(cachedEvents, nativeEvents)
-      const knownMeetings = mergeEvents(cachedEvents, nativeEvents).filter((event) => event.kind === "meeting")
+      const metadataFallback = metadataFullyUpdated
+        ? filterEventsToCourseUrls(nativeEvents, courseUrls)
+        : filterEventsToCourseUrls(mergeEvents(cachedEvents, nativeEvents), courseUrls)
+      const knownMeetings = filterEventsToCourseUrls(
+        mergeEvents(cachedEvents, nativeEvents),
+        courseUrls
+      ).filter((event) => event.kind === "meeting")
       events = applyCachedCompletion(
         retainMissingMeetingsTemporarily(mergeEvents(metadata.events, metadataFallback), knownMeetings),
         cachedEvents
@@ -337,6 +345,8 @@
       fetchCalendarEventSource(new Date()).then(collect)
     ])
 
+    events = filterEventsToCourseUrls(events, courseUrls)
+
     return {
       events,
       courseUrls,
@@ -374,6 +384,7 @@
 
     return {
       ...preferred,
+      courseUrl: preferred.courseUrl || existing.courseUrl || incoming.courseUrl || "",
       completed: existing.completed === true || incoming.completed === true,
       completionCheckedAt: Math.max(
         Number(existing.completionCheckedAt) || 0,
@@ -407,29 +418,28 @@
   }
 
   async function discoverCourseUrls(cachedUrls = [], cachedAt = 0) {
-    const urls = new Set(cachedUrls.filter((value) => isSameOriginCourseUrl(value)))
-    let updatedAt = cachedAt
-    collectCourseUrlsFromDocument(document, urls)
+    const cached = new Set(cachedUrls.map(normalizeCourseUrl).filter(Boolean))
 
-    if (urls.size && cachedAt > 0 && Date.now() - cachedAt < COURSE_INDEX_TTL) {
-      return { urls: Array.from(urls), updatedAt: cachedAt, succeeded: true }
+    if (cached.size && cachedAt > 0 && Date.now() - cachedAt < COURSE_INDEX_TTL) {
+      return { urls: Array.from(cached), updatedAt: cachedAt, succeeded: true }
     }
 
-    let succeeded = false
     try {
       const response = await fetch(`${location.origin}/my/`, { credentials: "include" })
       if (response.ok) {
         const html = await response.text()
         const doc = new DOMParser().parseFromString(html, "text/html")
-        collectCourseUrlsFromDocument(doc, urls)
-        updatedAt = Date.now()
-        succeeded = true
+        const discovered = new Set()
+        collectCourseUrlsFromDocument(doc, discovered)
+        if (discovered.size) {
+          return { urls: Array.from(discovered), updatedAt: Date.now(), succeeded: true }
+        }
       }
     } catch {
-      // The visible calendar events remain a safe fallback when the course index cannot load.
+      // The saved course index remains a safe fallback when the course index cannot load.
     }
 
-    return { urls: Array.from(urls), updatedAt, succeeded }
+    return { urls: Array.from(cached), updatedAt: cachedAt, succeeded: false }
   }
 
   function isSameOriginCourseUrl(value) {
@@ -464,7 +474,7 @@
       events: deserializeDeadlineEvents(cached.events),
       metadataUpdatedAt: Number(cached.metadataUpdatedAt) || 0,
       courseUrls: Array.isArray(cached.courseUrls)
-        ? cached.courseUrls.filter((value) => isSameOriginCourseUrl(value))
+        ? cached.courseUrls.map(normalizeCourseUrl).filter(Boolean)
         : [],
       courseUrlsUpdatedAt: Number(cached.courseUrlsUpdatedAt) || 0,
       savedAt
@@ -479,7 +489,7 @@
         savedAt,
         metadataUpdatedAt: Number(metadataUpdatedAt) || 0,
         courseUrlsUpdatedAt: Number(courseUrlsUpdatedAt) || 0,
-        courseUrls: Array.from(new Set((courseUrls || []).filter((value) => isSameOriginCourseUrl(value)))),
+        courseUrls: Array.from(new Set((courseUrls || []).map(normalizeCourseUrl).filter(Boolean))),
         events: serializeDeadlineEvents(events)
       }
     })
@@ -510,6 +520,7 @@
     return mergeEvents(events || [], []).map((event) => ({
       title: String(event.title || ""),
       course: String(event.course || ""),
+      courseUrl: String(event.courseUrl || ""),
       date: event.date.toISOString(),
       href: String(event.href || ""),
       kind: event.kind === "meeting" ? "meeting" : "deadline",
@@ -528,6 +539,7 @@
       return {
         title: String(value.title),
         course: String(value.course || "Không rõ môn học"),
+        courseUrl: String(value.courseUrl || ""),
         date,
         dateLabel: formatDate(date),
         time: formatTime(date),
@@ -653,11 +665,8 @@
   function collectCourseUrlsFromDocument(doc, urls) {
     doc.querySelectorAll('a[href*="/course/view.php?id="]').forEach((link) => {
       try {
-        const url = new URL(link.href, location.origin)
-        if (url.origin === location.origin && url.pathname.toLowerCase() === "/course/view.php" && url.searchParams.get("id")) {
-          url.hash = ""
-          urls.add(url.toString())
-        }
+        const url = normalizeCourseUrl(link.href)
+        if (url) urls.add(url)
       } catch {
         // Ignore malformed navigation items.
       }
@@ -672,6 +681,39 @@
     })
   }
 
+  function filterEventsToCourseUrls(events, courseUrls) {
+    const allowedCourseIds = new Set(courseUrls.map(courseIdFromUrl).filter(Boolean))
+    if (!allowedCourseIds.size) return events
+
+    return events.filter((event) => {
+      const courseId = courseIdFromUrl(event.courseUrl)
+      return !courseId || allowedCourseIds.has(courseId)
+    })
+  }
+
+  function courseIdFromUrl(value) {
+    if (!value) return ""
+    try {
+      const url = new URL(value, location.origin)
+      if (url.origin !== location.origin || url.pathname.toLowerCase() !== "/course/view.php") return ""
+      return url.searchParams.get("id") || ""
+    } catch {
+      return ""
+    }
+  }
+
+  function normalizeCourseUrl(value) {
+    if (!isSameOriginCourseUrl(value)) return ""
+    try {
+      const url = new URL(value, location.origin)
+      url.hash = ""
+      url.search = `?id=${encodeURIComponent(url.searchParams.get("id") || "")}`
+      return url.toString()
+    } catch {
+      return ""
+    }
+  }
+
   async function fetchCourseDeadlineSource(courseUrl) {
     try {
       const response = await fetch(courseUrl, { credentials: "include" })
@@ -679,7 +721,7 @@
       const html = await response.text()
       const events = parseCourseDeadlines(html, courseUrl)
       const forumUrls = parseCourseMeetingForumUrls(html, courseUrl)
-      const meetingSource = await fetchCourseMeetingEvents(forumUrls)
+      const meetingSource = await fetchCourseMeetingEvents(forumUrls, courseUrl)
       return {
         events: mergeEvents(events, meetingSource.events),
         succeeded: meetingSource.succeeded
@@ -708,13 +750,13 @@
     return Array.from(urls)
   }
 
-  async function fetchCourseMeetingEvents(forumUrls) {
+  async function fetchCourseMeetingEvents(forumUrls, courseUrl = "") {
     if (!forumUrls.length) return { events: [], succeeded: true }
 
     const results = await mapWithConcurrency(
       forumUrls,
       FORUM_DISCUSSION_CONCURRENCY,
-      async (forumUrl) => fetchCourseMeetingSource(forumUrl)
+      async (forumUrl) => fetchCourseMeetingSource(forumUrl, courseUrl)
     )
 
     return {
@@ -723,13 +765,13 @@
     }
   }
 
-  async function fetchCourseMeetingSource(forumUrl) {
+  async function fetchCourseMeetingSource(forumUrl, courseUrl = "") {
     try {
       const response = await fetch(forumUrl, { credentials: "include" })
       if (!response.ok) return { events: [], succeeded: false }
       const html = await response.text()
       return {
-        events: parseCourseMeetingForumEvents(html, forumUrl),
+        events: parseCourseMeetingForumEvents(html, forumUrl, courseUrl),
         succeeded: true
       }
     } catch {
@@ -927,7 +969,7 @@
 
   function parseCourseDeadlines(html, courseUrl) {
     const doc = new DOMParser().parseFromString(html, "text/html")
-    const fallbackCourse = getCourseNameFromDocument(doc)
+    const fallbackCourse = getCourseNameFromDocument(doc, "Không rõ môn học", courseUrl)
     const activityItems = Array.from(doc.querySelectorAll(".activity-item, li.activity, .activity"))
     const uniqueItems = activityItems.filter((item, index) => activityItems.indexOf(item) === index
       && !activityItems.some((parent) => parent !== item && parent.contains(item)))
@@ -942,7 +984,7 @@
       const titleElement = item.querySelector(".instancename, .activityname, h3, h4")
       const title = cleanEventTitle(titleElement?.textContent || titleLink?.textContent || "Deadline")
       const href = titleLink?.href ? new URL(titleLink.href, courseUrl).toString() : courseUrl
-      const course = getCourseNameFromDocument(doc, fallbackCourse)
+      const course = getCourseNameFromDocument(doc, fallbackCourse, courseUrl)
       const completed = needsRemoteCompletionCheck(href) ? false : detectActivityCompletion(item)
 
       for (const match of text.matchAll(deadlinePattern)) {
@@ -959,6 +1001,7 @@
         events.push({
           title,
           course,
+          courseUrl,
           date,
           dateLabel: formatDate(date),
           time: formatTime(date),
@@ -973,9 +1016,9 @@
     return events
   }
 
-  function parseCourseMeetingForumEvents(html, forumUrl) {
+  function parseCourseMeetingForumEvents(html, forumUrl, courseUrl = "") {
     const doc = new DOMParser().parseFromString(html, "text/html")
-    const fallbackCourse = getCourseNameFromDocument(doc)
+    const fallbackCourse = getCourseNameFromDocument(doc, "Không rõ môn học", courseUrl)
     const candidates = Array.from(doc.querySelectorAll(
       '[data-region="discussion-list-item"], tr.discussion, .discussion'
     ))
@@ -1009,7 +1052,8 @@
       const title = cleanMeetingTitle(titleLink?.textContent || "Video conference") || "Video conference"
       events.push({
         title,
-        course: getCourseNameFromDocument(doc, fallbackCourse),
+        course: getCourseNameFromDocument(doc, fallbackCourse, courseUrl),
+        courseUrl,
         date,
         dateLabel: formatDate(date),
         time: formatTime(date),
@@ -1023,10 +1067,20 @@
     return events
   }
 
-  function getCourseNameFromDocument(doc, fallback = "Không rõ môn học") {
-    const courseLink = doc.querySelector('a[href*="/course/view.php"]')
+  function getCourseNameFromDocument(doc, fallback = "Không rõ môn học", courseUrl = "") {
+    const expectedCourseId = courseIdFromUrl(courseUrl)
+    const courseLinks = Array.from(doc.querySelectorAll('a[href*="/course/view.php"]'))
+    const courseLink = courseLinks.find((link) => courseIdFromUrl(link.href) === expectedCourseId
+      && !new URL(link.href, location.origin).searchParams.has("lang"))
     const heading = doc.querySelector(".page-header-headings h1, header h1, h1")
-    return cleanText(courseLink?.textContent || heading?.textContent || fallback)
+    const isCoursePage = /\b(?:path|page)-course-view\b/i.test(doc.body?.className || "")
+    return cleanText(
+      (isCoursePage ? heading?.textContent : courseLink?.textContent)
+      || heading?.textContent
+      || courseLink?.textContent
+      || courseLinks[0]?.textContent
+      || fallback
+    )
   }
 
   function parseMeetingSchedule(value) {
@@ -1118,7 +1172,10 @@
       "h3, h4, .name, .event-name, [data-region='event-name']"
     )
     const title = cleanEventTitle(titleElement?.textContent || "")
-    const courseLink = item.querySelector('a[href*="/course/view.php"]')
+    const courseLink = /** @type {HTMLAnchorElement | null} */ (
+      item.querySelector('a[href*="/course/view.php"]')
+    )
+    const courseUrl = courseLink?.href ? new URL(courseLink.href, location.origin).toString() : ""
     const dayLink = item.querySelector('a[href*="/calendar/view.php"][href*="time="]')
     const activityLinks = /** @type {HTMLAnchorElement[]} */ (Array.from(item.querySelectorAll("a[href*='/mod/']")))
     const activityLink = activityLinks
@@ -1130,6 +1187,7 @@
     return {
       title,
       course: cleanText(courseLink?.textContent || "Không rõ môn học"),
+      courseUrl,
       date,
       dateLabel: formatDate(date),
       time: formatTime(date),
