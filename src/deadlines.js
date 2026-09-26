@@ -371,6 +371,11 @@
   }
 
   function eventIdentityKey(event) {
+    if (event.kind === "meeting") {
+      const minute = Math.floor(event.date.getTime() / 60_000)
+      return `${minute}|${normalizeText(event.course)}|meeting|${normalizeText(event.title)}`
+    }
+
     const resource = normalizeText(event.href)
     return resource
       ? `${event.date.getTime()}|${normalizeText(event.course)}|${resource}`
@@ -2015,19 +2020,22 @@
     const isForum = /\/mod\/forum\//i.test(event.href || "")
     const eventTime = event.date.getTime()
     const isOverdue = !isCompleted && !extensionNotNeeded && eventTime < now
-    const isDueSoon = !isCompleted && !extensionNotNeeded && eventTime >= now && eventTime <= now + (3 * 24 * 60 * 60 * 1000)
     const isOverdueLocked = isOverdue && !isForum
     const isMeeting = event.kind === "meeting"
     const isExtension = isExtensionDeadline(event)
-    const isBaseDeadline = !isMeeting && !isExtension && !isOverdue && !isDueSoon
     const isTemporarilyRetained = isMeeting
       && event.temporary === true
       && Number(event.temporaryUntil) > Date.now()
-    const isTodayPending = !isMeeting
-      && !isCompleted
+    const isTodayPending = !isCompleted
       && !extensionNotNeeded
       && !isInactiveExtension
       && isSameHanoiDay(event.date, new Date(now))
+    const isDueSoon = !isCompleted
+      && !extensionNotNeeded
+      && !isTodayPending
+      && eventTime >= now
+      && eventTime <= now + (3 * 24 * 60 * 60 * 1000)
+    const isBaseDeadline = !isMeeting && !isExtension && !isOverdue && !isDueSoon && !isTodayPending
     const countdownMarkup = isTodayPending && eventTime > now
       ? `<span class="ou-deadline-countdown" data-ou-deadline-countdown data-deadline-time="${eventTime}" title="Đếm ngược theo múi giờ UTC+7 · Hạn ${escapeAttribute(`${formatDate(event.date)} ${event.time}`)}">Còn ${formatDeadlineCountdown(eventTime - now)}</span>`
       : ""
@@ -2050,6 +2058,8 @@
         ? `<span class="ou-deadline-status-submitted ${isExtensionActionable ? "ou-deadline-status-submitted-late" : "ou-deadline-status-submitted-inactive"}">ĐÃ NỘP GIA HẠN</span>`
         : isOverdue
           ? '<span class="ou-deadline-status-overdue">QUÁ HẠN</span>'
+          : isTodayPending
+            ? '<span class="ou-deadline-status-today">HÔM NAY</span>'
           : isDueSoon
             ? '<span class="ou-deadline-status-due-soon"><span class="ou-deadline-due-soon-icon" aria-hidden="true"></span>SẮP ĐẾN HẠN</span>'
         : ""
@@ -2295,6 +2305,7 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-submitted-inactive { border: 1px solid #d9dde5; background: #eef0f4; color: #70798a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-extension { background: #fff6df; color: #9a6a00; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-overdue { padding: 3px 6px; border-radius: 999px; background: #fff0f0; color: #c24141; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-today { padding: 3px 6px; border-radius: 999px; background: #fff0f1; color: #a92331; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-due-soon { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 999px; background: #fff3d5; color: #a46600; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-temporary { padding: 3px 6px; border: 1px solid #d8dff7; border-radius: 999px; background: #f0f3ff; color: #5269c7; cursor: help; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-status-temporary:focus-visible { outline: 2px solid rgba(82, 105, 199, .35); outline-offset: 2px; }
