@@ -7,11 +7,31 @@ const MEDIA_MIME_RE = /(?:video|mpegurl|dash\+xml|mp2t)/i
 // allowed to turn a background download into a Save As fallback.
 const DOWNLOAD_RELATIVE_PATH_MAX = 200
 const DOWNLOAD_LEAF_LENGTH_BUDGET = 72
+const DEADLINE_REMINDER_EVENTS_KEY = "ouYeahDeadlineReminderEventsV1"
+const DEADLINE_REMINDER_DELIVERIES_KEY = "ouYeahDeadlineReminderDeliveriesV1"
+const DEADLINE_REMINDER_ALARM_PREFIX = "ouYeahDeadlineReminder"
+const DEADLINE_REMINDER_EXACT_ALARM = `${DEADLINE_REMINDER_ALARM_PREFIX}:exact`
+const DEADLINE_REMINDER_DAILY_HOURS = [20, 21, 22, 23]
+const DEADLINE_REMINDER_TIME_ZONE = "Asia/Ho_Chi_Minh"
+const DEADLINE_REMINDER_TIME_ZONE_OFFSET_MS = 7 * 60 * 60 * 1000
+const DEADLINE_REMINDER_EXACT_GRACE_MS = 10 * 60 * 1000
+const DEADLINE_REMINDER_HANOI_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: DEADLINE_REMINDER_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+})
 
 const tabMedia = new Map()
 const downloadJobs = new Map()
 const trackedDownloads = new Map()
 const pendingCanceledJobs = new Set()
+let deadlineReminderQueue = Promise.resolve()
+
+initializeDeadlineReminderAlarms()
 
 function isFromSupportedPage(details) {
   return [details.initiator, details.documentUrl, details.originUrl, details.url]
@@ -125,6 +145,15 @@ async function handleActionClick(tab) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return false
+
+  if (message.type === "ou-yeah-sync-deadline-reminders") {
+    if (!isElolmsSender(sender)) {
+      sendResponse({ ok: false, error: "Yêu cầu đồng bộ deadline không đến từ ELOLMS." })
+      return false
+    }
+    respondToAsyncRequest(syncDeadlineReminderEvents(message.events), sendResponse)
+    return true
+  }
 
   if (message.type === "ou-yeah-get-media-candidates") {
     const tabId = sender.tab?.id
@@ -251,6 +280,349 @@ function respondToAsyncRequest(pending, sendResponse) {
         // The message channel was already closed.
       }
     })
+}
+
+function initializeDeadlineReminderAlarms() {
+  const alarms = chrome.alarms
+  if (!alarms?.onAlarm?.addListener) return
+
+  alarms.onAlarm.addListener((alarm) => {
+    if (alarm?.name === DEADLINE_REMINDER_EXACT_ALARM) {
+      handleDeadlineExactAlarm().catch(() => {})
+      return
+    }
+
+    const dailyMatch = new RegExp(`^${DEADLINE_REMINDER_ALARM_PREFIX}:daily:(20|21|22|23)$`).exec(alarm?.name || "")
+    if (dailyMatch) handleDeadlineDailyAlarm(Number(dailyMatch[1]), alarm.scheduledTime).catch(() => {})
+  })
+
+  chrome.notifications?.onClicked?.addListener(() => {
+    chrome.tabs.create({
+      url: "https://elolms.ou.edu.vn/calendar/view.php?view=upcoming&ouyeah=deadlines"
+    }).catch(() => {})
+  })
+
+  chrome.runtime.onInstalled?.addListener(() => {
+    restoreDeadlineReminderAlarms().catch(() => {})
+  })
+  chrome.runtime.onStartup?.addListener(() => {
+    restoreDeadlineReminderAlarms().catch(() => {})
+  })
+  restoreDeadlineReminderAlarms().catch(() => {})
+}
+
+function withDeadlineReminderLock(task) {
+  const next = deadlineReminderQueue.then(task, task)
+  deadlineReminderQueue = next.catch(() => {})
+  return next
+}
+
+async function restoreDeadlineReminderAlarms() {
+  await Promise.all(DEADLINE_REMINDER_DAILY_HOURS.map(ensureDeadlineDailyAlarm))
+  await withDeadlineReminderLock(async () => {
+    const events = await readDeadlineReminderEvents()
+    const now = Date.now()
+    await deliverExactDeadlineReminders(events, now)
+    await scheduleNextExactDeadlineAlarm(events, now)
+  })
+}
+
+async function ensureDeadlineDailyAlarm(hour) {
+  const name = `${DEADLINE_REMINDER_ALARM_PREFIX}:daily:${hour}`
+  const existing = await chrome.alarms.get(name)
+  if (existing) return
+  await chrome.alarms.create(name, { when: nextHanoiHourTimestamp(hour) })
+}
+
+async function scheduleNextExactDeadlineAlarm(events, now) {
+  const existing = await chrome.alarms.get(DEADLINE_REMINDER_EXACT_ALARM)
+  const nextReminderAt = getNextExactDeadlineReminderTime(events, now)
+  if (!Number.isFinite(nextReminderAt)) {
+    if (existing) await chrome.alarms.clear(DEADLINE_REMINDER_EXACT_ALARM)
+    return
+  }
+  const existingTime = Number(existing?.scheduledTime)
+  if (existing && (Math.abs(existingTime - nextReminderAt) < 1000
+    || (existingTime <= now && now - existingTime <= DEADLINE_REMINDER_EXACT_GRACE_MS))) return
+  if (existing) await chrome.alarms.clear(DEADLINE_REMINDER_EXACT_ALARM)
+  if (nextReminderAt <= now) return
+  await chrome.alarms.create(DEADLINE_REMINDER_EXACT_ALARM, { when: nextReminderAt })
+}
+
+function getNextExactDeadlineReminderTime(events, now) {
+  let nextReminderAt = Number.POSITIVE_INFINITY
+  events.forEach((event) => {
+    if (event.completed || event.date <= now) return
+    getExactDeadlineReminderOffsets(event).forEach((reminder) => {
+      const reminderAt = event.date - reminder.hours * 60 * 60 * 1000
+      if (reminderAt > now && reminderAt < nextReminderAt) nextReminderAt = reminderAt
+    })
+  })
+  return nextReminderAt
+}
+
+function getExactDeadlineReminderOffsets(event) {
+  return event.kind === "meeting"
+    ? [
+        { hours: 3, type: "meeting-3-hours" },
+        { hours: 2, type: "meeting-2-hours" },
+        { hours: 1, type: "meeting-1-hour" }
+      ]
+    : [
+        { hours: 72, type: "deadline-72-hours" },
+        { hours: 24, type: "deadline-24-hours" }
+      ]
+}
+
+function handleDeadlineExactAlarm() {
+  return withDeadlineReminderLock(async () => {
+    const events = await readDeadlineReminderEvents()
+    const now = Date.now()
+    await deliverExactDeadlineReminders(events, now)
+    await scheduleNextExactDeadlineAlarm(events, now)
+  })
+}
+
+function handleDeadlineDailyAlarm(hour, scheduledTime = Date.now()) {
+  return withDeadlineReminderLock(async () => {
+    const events = await readDeadlineReminderEvents()
+    const now = Date.now()
+    const daysByEvent = events.map((event) => ({
+      event,
+      daysUntil: hanoiDayDifference(now, event.date)
+    }))
+    const threeDayReminders = hour === 20
+      ? daysByEvent
+        .filter(({ event, daysUntil }) => event.kind === "deadline" && !event.completed && event.date > now && daysUntil === 3)
+        .map(({ event }) => ({ event, type: "deadline-3-days" }))
+      : []
+    const oneDayDeadlineReminders = daysByEvent
+      .filter(({ event, daysUntil }) => event.kind === "deadline" && !event.completed && event.date > now && daysUntil === 1)
+      .map(({ event }) => ({ event, type: `deadline-1-day-${hour}` }))
+    const oneDayMeetingReminders = hour === 20
+      ? daysByEvent
+        .filter(({ event, daysUntil }) => event.kind === "meeting" && !event.completed && event.date > now && daysUntil === 1)
+        .map(({ event }) => ({ event, type: "meeting-1-day" }))
+      : []
+
+    await deliverDeadlineReminderGroup("deadline-3-days", scheduledTime, threeDayReminders)
+    await deliverDeadlineReminderGroup(`deadline-1-day-${hour}`, scheduledTime, oneDayDeadlineReminders)
+    await deliverDeadlineReminderGroup("meeting-1-day", scheduledTime, oneDayMeetingReminders)
+    await ensureDeadlineDailyAlarm(hour)
+  })
+}
+
+async function deliverExactDeadlineReminders(events, now) {
+  const byType = new Map()
+  events.forEach((event) => {
+    if (event.completed || event.date <= now) return
+    getExactDeadlineReminderOffsets(event).forEach((reminder) => {
+      const reminderAt = event.date - reminder.hours * 60 * 60 * 1000
+      if (reminderAt > now || now - reminderAt > DEADLINE_REMINDER_EXACT_GRACE_MS) return
+      if (!byType.has(reminder.type)) byType.set(reminder.type, [])
+      byType.get(reminder.type).push({ event, type: reminder.type, scheduledAt: reminderAt })
+    })
+  })
+
+  for (const [type, reminders] of byType) {
+    const bucketAt = reminders[0]?.scheduledAt || now
+    await deliverDeadlineReminderGroup(type, bucketAt, reminders)
+  }
+}
+
+async function deliverDeadlineReminderGroup(type, scheduledAt, reminders) {
+  if (!reminders.length) return
+
+  const bucket = hanoiHourBucket(scheduledAt)
+  const stored = await chrome.storage.local.get(DEADLINE_REMINDER_DELIVERIES_KEY)
+  const deliveries = stored?.[DEADLINE_REMINDER_DELIVERIES_KEY]
+    && typeof stored[DEADLINE_REMINDER_DELIVERIES_KEY] === "object"
+    ? { ...stored[DEADLINE_REMINDER_DELIVERIES_KEY] }
+    : {}
+  const freshReminders = reminders.filter(({ event, scheduledAt: eventScheduledAt }) => {
+    const eventBucket = hanoiHourBucket(eventScheduledAt || scheduledAt)
+    return deliveries[deadlineReminderEventKey(event)]?.bucket !== eventBucket
+  })
+  if (!freshReminders.length) return
+
+  const title = deadlineReminderTitle(type)
+  const lines = freshReminders.slice(0, 5).map(({ event }) => {
+    const dateLabel = formatDeadlineReminderDate(event.date)
+    const prefix = event.kind === "meeting" ? "Bắt đầu" : "Hạn"
+    return `${event.course}: ${event.title} · ${prefix} ${dateLabel}`
+  })
+  if (freshReminders.length > lines.length) lines.push(`Và ${freshReminders.length - lines.length} mục khác`)
+  const notificationId = `${DEADLINE_REMINDER_ALARM_PREFIX}:${type}:${bucket}`
+
+  await showDeadlineNotification(notificationId, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("src/icon-128.png"),
+    title,
+    message: lines.join("\n"),
+    contextMessage: "OU Yeah! · ELOLMS"
+  })
+
+  const sentAt = Date.now()
+  Object.keys(deliveries).forEach((key) => {
+    if (sentAt - (Number(deliveries[key]?.sentAt) || 0) > 45 * 24 * 60 * 60 * 1000) delete deliveries[key]
+  })
+  freshReminders.forEach(({ event, scheduledAt: eventScheduledAt }) => {
+    deliveries[deadlineReminderEventKey(event)] = {
+      bucket: hanoiHourBucket(eventScheduledAt || scheduledAt),
+      sentAt
+    }
+  })
+  await chrome.storage.local.set({ [DEADLINE_REMINDER_DELIVERIES_KEY]: deliveries })
+}
+
+function deadlineReminderTitle(type) {
+  const titles = {
+    "deadline-3-days": "Deadline còn 3 ngày",
+    "deadline-72-hours": "Deadline còn 72 giờ",
+    "deadline-24-hours": "Deadline còn 24 giờ",
+    "meeting-1-day": "VC diễn ra ngày mai",
+    "meeting-3-hours": "VC bắt đầu trong 3 giờ",
+    "meeting-2-hours": "VC bắt đầu trong 2 giờ",
+    "meeting-1-hour": "VC bắt đầu trong 1 giờ"
+  }
+  if (titles[type]) return titles[type]
+  if (type.startsWith("deadline-1-day-")) return "Deadline còn 1 ngày"
+  return "Nhắc lịch OU Yeah!"
+}
+
+function deadlineReminderEventKey(event) {
+  return hashDeadlineReminderText([
+    event.kind,
+    event.date,
+    normalizeDeadlineReminderText(event.course),
+    normalizeDeadlineReminderText(event.title),
+    event.href
+  ].join("|"))
+}
+
+function hashDeadlineReminderText(value) {
+  let hash = 2166136261
+  for (const character of String(value || "")) {
+    hash ^= character.codePointAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0")
+}
+
+function normalizeDeadlineReminderText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function formatDeadlineReminderDate(timestamp) {
+  return new Intl.DateTimeFormat("vi-VN", {
+    timeZone: DEADLINE_REMINDER_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).format(new Date(timestamp))
+}
+
+function hanoiDayDifference(fromTimestamp, toTimestamp) {
+  const from = hanoiReminderDateParts(fromTimestamp)
+  const to = hanoiReminderDateParts(toTimestamp)
+  const fromDay = Date.UTC(from.year, from.month - 1, from.day)
+  const toDay = Date.UTC(to.year, to.month - 1, to.day)
+  return Math.round((toDay - fromDay) / (24 * 60 * 60 * 1000))
+}
+
+function hanoiHourBucket(timestamp) {
+  const parts = hanoiReminderDateParts(timestamp)
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}-${String(parts.hour).padStart(2, "0")}`
+}
+
+function hanoiReminderDateParts(timestamp) {
+  const parts = DEADLINE_REMINDER_HANOI_FORMATTER.formatToParts(new Date(timestamp))
+  /** @type {Record<string, number>} */
+  const values = {}
+  parts.forEach((part) => {
+    if (part.type !== "literal") values[part.type] = Number(part.value)
+  })
+  return values
+}
+
+function nextHanoiHourTimestamp(hour, now = Date.now()) {
+  const parts = hanoiReminderDateParts(now)
+  let timestamp = Date.UTC(parts.year, parts.month - 1, parts.day, hour)
+    - DEADLINE_REMINDER_TIME_ZONE_OFFSET_MS
+  if (timestamp <= now) timestamp += 24 * 60 * 60 * 1000
+  return timestamp
+}
+
+async function readDeadlineReminderEvents() {
+  const stored = await chrome.storage.local.get(DEADLINE_REMINDER_EVENTS_KEY)
+  return Array.isArray(stored?.[DEADLINE_REMINDER_EVENTS_KEY])
+    ? stored[DEADLINE_REMINDER_EVENTS_KEY]
+    : []
+}
+
+function normalizeDeadlineReminderEvents(events) {
+  if (!Array.isArray(events)) return []
+  const unique = new Map()
+  events.slice(0, 2500).forEach((value) => {
+    const date = Number(value?.date)
+    const title = String(value?.title || "").replace(/\s+/g, " ").trim().slice(0, 180)
+    if (!title || !Number.isFinite(date) || date <= 0) return
+    const event = {
+      title,
+      course: String(value?.course || "Không rõ môn học").replace(/\s+/g, " ").trim().slice(0, 180),
+      date,
+      href: normalizeDeadlineReminderHref(value?.href),
+      kind: value?.kind === "meeting" ? "meeting" : "deadline",
+      completed: value?.completed === true
+    }
+    unique.set(deadlineReminderEventKey(event), event)
+  })
+  return Array.from(unique.values())
+}
+
+function normalizeDeadlineReminderHref(value) {
+  try {
+    const url = new URL(value)
+    return url.protocol === "https:" && url.hostname === "elolms.ou.edu.vn"
+      ? url.toString()
+      : ""
+  } catch {
+    return ""
+  }
+}
+
+async function syncDeadlineReminderEvents(rawEvents) {
+  const events = normalizeDeadlineReminderEvents(rawEvents)
+  return withDeadlineReminderLock(async () => {
+    await chrome.storage.local.set({ [DEADLINE_REMINDER_EVENTS_KEY]: events })
+    const now = Date.now()
+    await deliverExactDeadlineReminders(events, now)
+    await scheduleNextExactDeadlineAlarm(events, now)
+    return { ok: true, count: events.length }
+  })
+}
+
+function showDeadlineNotification(id, options) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.notifications.create(id, options, (createdId) => {
+        const error = chrome.runtime.lastError
+        if (error) reject(new Error(error.message || "Không thể hiển thị thông báo deadline."))
+        else resolve(createdId || id)
+      })
+    } catch (error) {
+      reject(error)
+    }
+  })
 }
 
 function cancelDownloadJob(jobId, sender) {

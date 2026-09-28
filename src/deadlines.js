@@ -268,6 +268,7 @@
 
     if (events.length) {
       updateDeadlineDashboardEvents(dashboard, events)
+      sendDeadlineReminderSnapshot(events)
       if (cache.savedAt) {
         setDeadlineSyncStatus(dashboard, `Đang dùng dữ liệu đã lưu lúc ${formatDeadlineSyncTime(cache.savedAt)} · kiểm tra thay đổi trong nền...`)
       }
@@ -318,6 +319,7 @@
     }
 
     updateDeadlineDashboardEvents(dashboard, events)
+    if (metadataFullyUpdated || events.length) sendDeadlineReminderSnapshot(events)
     setDeadlineSyncStatus(dashboard, metadataFullyUpdated
       ? `Đã đồng bộ lúc ${formatDeadlineSyncTime(latestSavedAt || Date.now())}`
       : `Đồng bộ chưa hoàn tất lúc ${formatDeadlineSyncTime(latestSavedAt || Date.now())} · đang giữ dữ liệu gần nhất`)
@@ -1236,7 +1238,7 @@
       selectedMonth: getInitialMonth(events),
       selectedCourse: "",
       query: "",
-      hideCompleted: false,
+      completionFilter: "hide-completed",
       loadedMonths: new Set([monthKey(getInitialMonth(events))]),
       isLoading: false,
       isSyncing: false,
@@ -1272,12 +1274,14 @@
           </label>
           <div class="ou-deadline-completed-filter" data-ou-deadline-completion-filter>
             <button type="button" class="ou-deadline-completion-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Lọc trạng thái deadline">
-              <span data-ou-deadline-completion-value>Tất cả deadline</span>
+              <span data-ou-deadline-completion-value>Ẩn đã thực hiện</span>
               <span class="ou-deadline-completion-chevron" aria-hidden="true"></span>
             </button>
             <div class="ou-deadline-completion-menu" role="listbox" hidden>
-              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="all" aria-selected="true">Tất cả deadline</button>
-              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="hide-completed" aria-selected="false">Ẩn đã thực hiện</button>
+              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="all" aria-selected="false">Tất cả deadline</button>
+              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="hide-completed" aria-selected="true">Ẩn đã thực hiện</button>
+              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="overdue-unsubmitted" aria-selected="false">Deadline trễ hạn (Chưa nộp)</button>
+              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="overdue-submitted" aria-selected="false">Deadline trễ hạn (Đã nộp)</button>
             </div>
           </div>
         </div>
@@ -1318,14 +1322,14 @@
     const refreshButton = /** @type {HTMLButtonElement | null} */ (dashboard.querySelector("[data-ou-deadline-refresh]"))
 
     syncCourseFilter(courseFilter, state.events)
-    syncCompletionFilter(completionFilter, state.hideCompleted)
+    syncCompletionFilter(completionFilter, state.completionFilter)
     syncMonthPicker(monthPicker, state.events, state.selectedMonth)
     setupCourseFilter(courseFilter, (value) => {
       state.selectedCourse = value
       renderDeadlineMonth(dashboard, state)
     })
     setupCompletionFilter(completionFilter, (value) => {
-      state.hideCompleted = value === "hide-completed"
+      state.completionFilter = value
       renderDeadlineMonth(dashboard, state)
     })
     setupMonthPicker(monthPicker, (value) => {
@@ -1364,8 +1368,31 @@
       state.selectedCourse = ""
     }
     syncCourseFilter(dashboard.querySelector("[data-ou-deadline-course-filter]"), state.events)
-    syncCompletionFilter(dashboard.querySelector("[data-ou-deadline-completion-filter]"), state.hideCompleted)
+    syncCompletionFilter(dashboard.querySelector("[data-ou-deadline-completion-filter]"), state.completionFilter)
     renderDeadlineMonth(dashboard, state)
+  }
+
+  function sendDeadlineReminderSnapshot(events) {
+    if (!chrome.runtime?.sendMessage) return
+    const reminders = mergeEvents(events || [], [])
+      .filter((event) => event.date instanceof Date)
+      .map((event) => ({
+        title: event.title,
+        course: event.course,
+        date: event.date.getTime(),
+        href: event.href || "",
+        kind: event.kind === "meeting" ? "meeting" : "deadline",
+        completed: event.completed === true
+      }))
+
+    try {
+      chrome.runtime.sendMessage({
+        type: "ou-yeah-sync-deadline-reminders",
+        events: reminders
+      }).catch(() => {})
+    } catch {
+      // The extension can reload while the deadline page is syncing.
+    }
   }
 
   function setDeadlineSyncStatus(dashboard, message) {
@@ -1598,9 +1625,9 @@
     })
   }
 
-  function syncCompletionFilter(container, hideCompleted) {
+  function syncCompletionFilter(container, filter) {
     if (!(container instanceof HTMLElement)) return
-    const value = hideCompleted ? "hide-completed" : "all"
+    const value = filter || "hide-completed"
     container.dataset.value = value
     updateCompletionFilterDisplay(container)
   }
@@ -1660,11 +1687,12 @@
     const month = startOfMonth(state.selectedMonth)
     const nextMonth = addHanoiMonths(month, 1)
     const query = normalizeText(state.query)
+    const now = Date.now()
     const monthEntries = buildDeadlineEntries(state.events)
       .filter((entry) => entry.events.some((event) => event.date >= month && event.date < nextMonth))
       .filter((entry) => !state.selectedCourse || entry.course === state.selectedCourse)
       .filter((entry) => !query || normalizeText(entry.events.map((event) => `${event.title} ${event.course}`).join(" ")).includes(query))
-      .map((entry) => state.hideCompleted ? filterCompletedDeadlineEntry(entry, state.events) : entry)
+      .map((entry) => filterCompletedDeadlineEntry(entry, state.events, state.completionFilter, now))
       .filter(Boolean)
 
     syncMonthPicker(monthPicker, state.events, month)
@@ -1681,7 +1709,7 @@
 
     list.innerHTML = ""
     if (!monthEntries.length) {
-      list.innerHTML = `<div class="ou-deadline-empty">${state.isLoading ? "Đang tải dữ liệu tháng này..." : state.hideCompleted ? "Không còn deadline hoặc buổi VC/meeting chưa thực hiện trong tháng này." : "Không có deadline hoặc buổi VC/meeting trong tháng này."}</div>`
+      list.innerHTML = `<div class="ou-deadline-empty">${state.isLoading ? "Đang tải dữ liệu tháng này..." : completionFilterEmptyMessage(state.completionFilter)}</div>`
       return
     }
 
@@ -1695,10 +1723,11 @@
 
   function exportDeadlineCalendar(dashboard, state) {
     const query = normalizeText(state.query)
+    const now = Date.now()
     const events = state.events
       .filter((event) => !state.selectedCourse || event.course === state.selectedCourse)
       .filter((event) => !query || normalizeText(`${event.title} ${event.course}`).includes(query))
-      .filter((event) => !state.hideCompleted || !isDeadlineCompletedForFilter(event, state.events))
+      .filter((event) => isEventVisibleForCompletionFilter(event, state.completionFilter, state.events, now))
       .filter((event) => event?.date instanceof Date && !Number.isNaN(event.date.getTime()))
       .sort(compareEvents)
 
@@ -1991,10 +2020,39 @@
     return Boolean(originalEvent && isDeadlineCompleted(originalEvent))
   }
 
-  function filterCompletedDeadlineEntry(entry, allEvents) {
-    const visibleEvents = entry.events.filter((event) => !isDeadlineCompletedForFilter(event, allEvents))
+  function isEventVisibleForCompletionFilter(event, filter, allEvents, now = Date.now()) {
+    if (filter === "hide-completed") return !isDeadlineCompletedForFilter(event, allEvents)
+    if (filter !== "overdue-unsubmitted" && filter !== "overdue-submitted") return true
+    if (event.kind === "meeting" || !(event.date instanceof Date)) return false
+    const eventTime = event.date.getTime()
+    if (!Number.isFinite(eventTime)) return false
+
+    const isCompleted = isDeadlineCompletedForFilter(event, allEvents)
+    if (filter === "overdue-unsubmitted" && isExtensionDeadline(event) && !isCompleted) {
+      const originalEvent = findOriginalDeadline(event, allEvents)
+      if (originalEvent
+        && originalEvent.date instanceof Date
+        && originalEvent.date.getTime() < now
+        && !isDeadlineCompletedForFilter(originalEvent, allEvents)) return true
+    }
+    if (eventTime >= now) return false
+
+    return filter === "overdue-submitted" ? isCompleted : !isCompleted
+  }
+
+  function completionFilterEmptyMessage(filter) {
+    if (filter === "hide-completed") return "Không còn deadline hoặc buổi VC/meeting chưa thực hiện trong tháng này."
+    if (filter === "overdue-unsubmitted") return "Không có deadline trễ hạn chưa nộp trong tháng này."
+    if (filter === "overdue-submitted") return "Không có deadline trễ hạn đã nộp trong tháng này."
+    return "Không có deadline hoặc buổi VC/meeting trong tháng này."
+  }
+
+  function filterCompletedDeadlineEntry(entry, allEvents, filter = "hide-completed", now = Date.now()) {
+    const visibleEvents = entry.events.filter((event) => isEventVisibleForCompletionFilter(event, filter, allEvents, now))
     if (!visibleEvents.length) return null
-    if (entry.type !== "group") return { ...entry, events: visibleEvents }
+    if (entry.type !== "group" || visibleEvents.length === 1) {
+      return { type: "single", events: visibleEvents, course: entry.course }
+    }
     return {
       ...entry,
       base: visibleEvents[0],
@@ -2173,7 +2231,7 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-filters { display: flex; align-items: center; flex: 1 1 auto; gap: 8px; height: 40px; min-width: 0; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter { position: relative; flex: 0 1 230px; height: 40px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-search { display: block; flex: 1 1 260px; height: 40px; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { position: relative; display: inline-flex; flex: 0 1 190px; height: 40px; min-width: 170px; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-completed-filter { position: relative; display: inline-flex; flex: 0 1 275px; height: 40px; min-width: 245px; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger, #${DEADLINE_DASHBOARD_ID} .ou-deadline-search input { width: 100%; height: 40px; min-height: 40px; padding: 9px 13px; border: 1px solid var(--ou-deadline-line); border-radius: 10px; background: #fff; color: var(--ou-deadline-ink); outline: none; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; font: inherit; text-align: left; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-trigger:hover, #${DEADLINE_DASHBOARD_ID} .ou-deadline-course-filter.is-open .ou-deadline-course-trigger { border-color: rgba(82, 105, 199, .52); box-shadow: 0 0 0 3px rgba(82, 105, 199, .1); }

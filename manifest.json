@@ -77,7 +77,9 @@
   ],
   "permissions": [
     "activeTab",
+    "alarms",
     "downloads",
+    "notifications",
     "offscreen",
     "scripting",
     "storage",
