@@ -1280,6 +1280,7 @@
             <div class="ou-deadline-completion-menu" role="listbox" hidden>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="all" aria-selected="false">Tất cả deadline</button>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="hide-completed" aria-selected="true">Ẩn đã thực hiện</button>
+              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="due-today" aria-selected="false">Cần làm hôm nay</button>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="overdue-unsubmitted" aria-selected="false">Deadline trễ hạn (Chưa nộp)</button>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="overdue-submitted" aria-selected="false">Deadline trễ hạn (Đã nộp)</button>
             </div>
@@ -2022,6 +2023,23 @@
 
   function isEventVisibleForCompletionFilter(event, filter, allEvents, now = Date.now()) {
     if (filter === "hide-completed") return !isDeadlineCompletedForFilter(event, allEvents)
+    if (filter === "due-today") {
+      if (event.kind === "meeting" || !(event.date instanceof Date)) return false
+      const eventTime = event.date.getTime()
+      if (!Number.isFinite(eventTime) || isDeadlineCompletedForFilter(event, allEvents)) return false
+      const today = new Date(now)
+      if (isSameHanoiDay(event.date, today) && eventTime >= now) return true
+
+      if (isExtensionDeadline(event)) {
+        const originalEvent = findOriginalDeadline(event, allEvents)
+        return Boolean(originalEvent
+          && originalEvent.date instanceof Date
+          && originalEvent.date.getTime() >= now
+          && isSameHanoiDay(originalEvent.date, today)
+          && !isDeadlineCompletedForFilter(originalEvent, allEvents))
+      }
+      return false
+    }
     if (filter !== "overdue-unsubmitted" && filter !== "overdue-submitted") return true
     if (event.kind === "meeting" || !(event.date instanceof Date)) return false
     const eventTime = event.date.getTime()
@@ -2042,6 +2060,7 @@
 
   function completionFilterEmptyMessage(filter) {
     if (filter === "hide-completed") return "Không còn deadline hoặc buổi VC/meeting chưa thực hiện trong tháng này."
+    if (filter === "due-today") return "Không có deadline nào cần thực hiện hôm nay trong tháng này."
     if (filter === "overdue-unsubmitted") return "Không có deadline trễ hạn chưa nộp trong tháng này."
     if (filter === "overdue-submitted") return "Không có deadline trễ hạn đã nộp trong tháng này."
     return "Không có deadline hoặc buổi VC/meeting trong tháng này."
