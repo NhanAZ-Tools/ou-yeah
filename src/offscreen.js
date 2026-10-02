@@ -7,7 +7,20 @@ const HLS_SEGMENT_RETRY_DELAYS = [500, 1200, 2500]
 const objectUrls = new Set()
 const hlsControllers = new Map()
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "ou-yeah-create-quiz-bank-blob") {
+    try {
+      const bytes = Uint8Array.from(atob(String(message.data || "")), (character) => character.charCodeAt(0))
+      const blob = new Blob([bytes], { type: String(message.mimeType || "application/octet-stream") })
+      const blobUrl = URL.createObjectURL(blob)
+      objectUrls.add(blobUrl)
+      sendResponse({ ok: true, blobUrl })
+    } catch (error) {
+      sendResponse({ ok: false, error: readableError(error) })
+    }
+    return false
+  }
+
   if (message?.type === "ou-yeah-download-hls") {
     downloadHls(message).catch((error) => {
       if (isCancellationError(error)) sendProgress(message.jobId, "canceled", "Đã hủy ngay.", 0)

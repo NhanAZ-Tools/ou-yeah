@@ -13,6 +13,8 @@
   const TOOLBAR_ID = "ou-yeah-course-data-export-toolbar"
   const STORAGE_PREFIX = "ouYeahCourseDataExport:"
   const MATERIAL_STORAGE_PREFIX = "ouYeahCourseDownloadSession:"
+  const QUIZ_TRAINER_STORAGE_PREFIX = "ouYeahQuizTrainer:"
+  const QUIZ_TRAINER_FORMATS = new Set(["ou-yeah-quiz-bank-v1", "ou-yeah-quiz-bank-v2"])
   const SNAPSHOT_PREFIX = "ouYeahCourseDataSnapshot:"
   const MAX_BINARY_FILE_BYTES = 64 * 1024 * 1024
   const MAX_ARCHIVE_BYTES = 320 * 1024 * 1024
@@ -36,7 +38,7 @@
     { id: "materials", label: "Video, Slide, Script" },
     { id: "forums", label: "Diễn đàn và thông báo" },
     { id: "assignments", label: "Bài tập và bài nộp của tôi" },
-    { id: "assessments", label: "Bài kiểm tra đã được phép xem" },
+    { id: "assessments", label: "Bài kiểm tra + Quiz Lab" },
     { id: "schedule", label: "Lịch trình học tập" },
     { id: "grades", label: "Điểm số của tôi" },
     { id: "participants", label: "Danh sách thành viên" },
@@ -487,7 +489,7 @@
     if (selected.includes("content")) plan.push({ id: "content", label: "Đang xuất trang nội dung và tài nguyên…", run: () => collectContent(context) })
     if (selected.includes("forums")) plan.push({ id: "forums", label: "Đang xuất thông báo, thảo luận và Video Conference…", run: () => collectForums(context) })
     if (selected.includes("assignments")) plan.push({ id: "assignments", label: "Đang xuất đề bài, tệp hướng dẫn và dữ liệu bài nộp của bạn…", run: () => collectAssignments(context) })
-    if (selected.includes("assessments")) plan.push({ id: "assessments", label: "Đang đọc các bài kiểm tra được ELOLMS cho phép xem…", run: () => collectAssessments(context) })
+    if (selected.includes("assessments")) plan.push({ id: "assessments", label: "Đang gom bài kiểm tra được xem lại và bộ Quiz Lab đã lưu…", run: () => collectAssessments(context) })
     if (selected.includes("schedule")) plan.push({ id: "schedule", label: "Đang xuất lịch trình học tập…", run: () => collectLearningSchedule(context) })
     if (selected.includes("grades")) plan.push({ id: "grades", label: "Đang xuất báo cáo điểm của bạn…", run: () => collectGrades(context) })
     if (selected.includes("participants")) plan.push({ id: "participants", label: "Đang xuất danh sách thành viên đã giới hạn trường dữ liệu…", run: () => collectParticipants(context) })
@@ -697,6 +699,16 @@
       await waitIfPaused()
       if (cancelRequested) return
       const activity = targets[index]
+      if (activity.moduleType === "quiz") {
+        activeSession.message = `Đánh giá ${index + 1}/${targets.length}: ${activity.title} · gồm cả Quiz Lab đã lưu`
+        renderPanel()
+        try {
+          await collectQuiz(context, activity)
+        } catch (error) {
+          context.diagnostics.errors.push({ id: activity.id, sourceUrl: activity.sourceUrl, message: readableError(error) })
+        }
+        continue
+      }
       if (!activity.sourceUrl || activity.accessState !== "available") {
         context.diagnostics.skipped.push({ id: activity.id, reason: activity.restriction || "Bài đánh giá chưa mở" })
         continue
@@ -704,8 +716,7 @@
       activeSession.message = `Đánh giá ${index + 1}/${targets.length}: ${activity.title}`
       renderPanel()
       try {
-        if (activity.moduleType === "quiz") await collectQuiz(context, activity)
-        else await collectGenericAssessment(context, activity)
+        await collectGenericAssessment(context, activity)
       } catch (error) {
         context.diagnostics.errors.push({ id: activity.id, sourceUrl: activity.sourceUrl, message: readableError(error) })
       }
@@ -713,18 +724,38 @@
   }
 
   async function collectQuiz(context, activity) {
-    const doc = await fetchHtmlDocument(activity.sourceUrl)
-    const main = getMainContent(doc)
-    const activityUrl = new URL(activity.sourceUrl)
-    const viewPages = await collectPaginatedDocuments(activity.sourceUrl, doc, (candidate) => {
-      const url = new URL(candidate)
-      return url.origin === location.origin
-        && url.pathname.toLowerCase() === "/mod/quiz/view.php"
-        && url.searchParams.get("id") === activityUrl.searchParams.get("id")
-    })
-    const reviewUrls = dedupeBy(viewPages.flatMap(({ doc: page, url }) => Array.from(page.querySelectorAll("a[href*='/mod/quiz/review.php?attempt=']"))
-      .map((link) => absoluteUrl(link.getAttribute("href"), url))
-      .filter(Boolean)), (url) => url)
+    const quizLabScan = await loadQuizLabScan(activity)
+    const canReadEolmsQuiz = Boolean(activity.sourceUrl && activity.accessState === "available")
+    let main = null
+    let reviewUrls = []
+
+    if (canReadEolmsQuiz) {
+      try {
+        const doc = await fetchHtmlDocument(activity.sourceUrl)
+        main = getMainContent(doc)
+        const activityUrl = new URL(activity.sourceUrl)
+        const viewPages = await collectPaginatedDocuments(activity.sourceUrl, doc, (candidate) => {
+          const url = new URL(candidate)
+          return url.origin === location.origin
+            && url.pathname.toLowerCase() === "/mod/quiz/view.php"
+            && url.searchParams.get("id") === activityUrl.searchParams.get("id")
+        })
+        reviewUrls = dedupeBy(viewPages.flatMap(({ doc: page, url }) => Array.from(page.querySelectorAll("a[href*='/mod/quiz/review.php?attempt=']"))
+          .map((link) => absoluteUrl(link.getAttribute("href"), url))
+          .filter(Boolean)), (url) => url)
+      } catch (error) {
+        if (!quizLabScan) throw error
+        context.diagnostics.warnings.push({
+          id: activity.id,
+          sourceUrl: activity.sourceUrl,
+          message: `Không đọc được trang quiz ELOLMS; vẫn xuất ngân hàng Quiz Lab đã lưu. ${readableError(error)}`
+        })
+      }
+    } else if (!quizLabScan) {
+      context.diagnostics.skipped.push({ id: activity.id, reason: activity.restriction || "Quiz chưa mở và chưa có bộ Quiz Lab đã quét." })
+      return
+    }
+
     const questionsById = new Map()
     const attempts = []
     const directory = `04-assessments/${assessmentDirectory(activity)}`
@@ -743,38 +774,140 @@
       }
     }
 
+    const reviewQuestionCount = questionsById.size
+    let quizLabQuestions = []
+    if (quizLabScan) {
+      const quizLabQuestionsById = new Map()
+      quizLabScan.questions.forEach((question) => mergeQuestion(quizLabQuestionsById, extractQuizLabQuestion(question, quizLabScan)))
+      quizLabQuestions = [...quizLabQuestionsById.values()]
+      quizLabQuestions.forEach((question) => mergeQuestion(questionsById, question))
+      if (quizLabScan.state.status !== "complete") {
+        context.diagnostics.warnings.push({
+          id: activity.id,
+          sourceUrl: quizLabScan.sourceUrl,
+          message: `Đã đưa ${quizLabQuestions.length} câu Quiz Lab đã lưu vào gói; trạng thái quét là “${quizLabScan.state.status || "không rõ"}”, nên bộ đề có thể chưa đầy đủ.`
+        })
+      }
+    }
+
     const questions = [...questionsById.values()]
     const imageFiles = []
     for (let questionIndex = 0; questionIndex < questions.length; questionIndex += 1) {
       const question = questions[questionIndex]
       for (let imageIndex = 0; imageIndex < question.images.length; imageIndex += 1) {
         const image = question.images[imageIndex]
-        const result = await addRemoteAsset(context, image.sourceUrl, `${directory}/images/question-${pad(questionIndex + 1)}-${pad(imageIndex + 1)}`)
-        if (result) {
-          image.localPath = result.path
-          imageFiles.push(result.path)
+        try {
+          const result = await addRemoteAsset(context, image.sourceUrl, `${directory}/images/question-${pad(questionIndex + 1)}-${pad(imageIndex + 1)}`)
+          if (result) {
+            image.localPath = result.path
+            imageFiles.push(result.path)
+          }
+        } catch (error) {
+          context.diagnostics.warnings.push({ id: activity.id, sourceUrl: image.sourceUrl, message: `Không tải được ảnh câu hỏi; vẫn giữ nội dung câu hỏi. ${readableError(error)}` })
         }
       }
     }
 
     const data = {
-      format: "ou-yeah-quiz-bank-v3",
+      format: "ou-yeah-quiz-bank-v4",
       exportedAt: context.exportedAt,
-      quiz: { id: activity.activityId, title: activity.title, sourceUrl: activity.sourceUrl },
+      quiz: { id: activity.activityId, title: activity.title, sourceUrl: activity.sourceUrl || quizLabScan?.sourceUrl || "" },
       collection: {
-        mode: reviewUrls.length ? "completed-review" : "metadata-only",
+        mode: attempts.length && quizLabScan ? "combined" : attempts.length ? "completed-review" : quizLabScan ? "quiz-lab" : "metadata-only",
+        sources: [
+          ...(attempts.length ? ["elolms-review"] : []),
+          ...(quizLabScan ? ["quiz-lab-local"] : [])
+        ],
         completedReviewPages: attempts.length,
+        reviewUniqueQuestions: reviewQuestionCount,
+        quizLabScan: quizLabScan ? {
+          status: quizLabScan.state.status || "unknown",
+          mode: quizLabScan.state.quizMode || "practice",
+          completedAttempts: Number.isInteger(quizLabScan.state.completedAttempts) ? quizLabScan.state.completedAttempts : 0,
+          uniqueQuestions: quizLabQuestions.length,
+          stopReason: quizLabScan.state.stopReason || "",
+          updatedAt: quizLabScan.state.updatedAt || ""
+        } : null,
         uniqueQuestions: questions.length,
         doesNotCreateAttempts: true
       },
       attempts,
       questions,
       imageFiles,
-      pageSummary: cleanText(main.textContent)
+      pageSummary: cleanText(main?.textContent)
     }
     addJson(context, `${directory}/quiz-bank.json`, data)
     addText(context, `${directory}/quiz-bank.md`, renderQuizMarkdown(data))
-    updateEntity(context, activity.id, { localPath: `${directory}/quiz-bank.json`, reviewMode: data.collection.mode })
+    updateEntity(context, activity.id, {
+      localPath: `${directory}/quiz-bank.json`,
+      reviewMode: data.collection.mode,
+      quizLabIncluded: Boolean(quizLabScan)
+    })
+  }
+
+  async function loadQuizLabScan(activity) {
+    const quizId = String(activity.activityId || "")
+    if (!quizId) return null
+
+    const state = await storageGet(`${QUIZ_TRAINER_STORAGE_PREFIX}${quizId}`)
+    if (!state
+      || !QUIZ_TRAINER_FORMATS.has(state.format)
+      || String(state.quizId || "") !== quizId
+      || !Array.isArray(state.questions)
+      || !state.questions.length) return null
+
+    const sourceUrl = sameOriginUrl(state.viewUrl)
+    if (!sourceUrl) return null
+    try {
+      const url = new URL(sourceUrl)
+      const sourceQuizId = url.searchParams.get("id") || url.searchParams.get("cmid")
+      if (url.pathname.toLowerCase() !== "/mod/quiz/view.php" || sourceQuizId !== quizId) return null
+    } catch {
+      return null
+    }
+
+    return { state, sourceUrl, questions: state.questions }
+  }
+
+  function extractQuizLabQuestion(question, scan) {
+    const text = cleanText(question?.question || question?.text)
+    const correctAnswer = cleanText(question?.correctAnswer)
+    const answerKey = normalizeForKey(correctAnswer)
+    const options = (Array.isArray(question?.options) ? question.options : [])
+      .map((option, index) => ({
+        key: cleanText(option?.label || option?.key) || String.fromCharCode(97 + index),
+        text: cleanText(option?.text),
+        correct: Boolean(option?.correct)
+      }))
+      .filter((option) => option.text)
+      .map((option) => ({
+        ...option,
+        correct: option.correct
+          || answerKey === normalizeForKey(option.key)
+          || answerKey === normalizeForKey(option.text)
+          || answerKey === normalizeForKey(`${option.key}. ${option.text}`)
+      }))
+    const correctAnswers = options.filter((option) => option.correct).map((option) => option.key)
+    const images = (Array.isArray(question?.images) ? question.images : [])
+      .map((image) => ({
+        sourceUrl: sameOriginUrl(image?.sourceUrl),
+        alt: cleanText(image?.alt) || "Ảnh câu hỏi"
+      }))
+      .filter((image) => image.sourceUrl)
+
+    return {
+      id: cleanText(question?.id) || `quiz-lab-${hashString(text)}`,
+      key: normalizeForKey(text) || `quiz-lab-${hashString(question?.id || correctAnswer)}`,
+      text,
+      options,
+      correctAnswers,
+      rightAnswer: correctAnswer,
+      feedback: "",
+      images: dedupeBy(images, (image) => quizAssetKey(image.sourceUrl)),
+      observedInAttempts: Array.isArray(question?.attempts) ? question.attempts.map(String) : [],
+      sourceUrls: [scan.sourceUrl],
+      collectedFrom: ["quiz-lab"]
+    }
   }
 
   async function collectGenericAssessment(context, activity) {
@@ -1348,9 +1481,10 @@
       correctAnswers,
       rightAnswer,
       feedback,
-      images,
+      images: dedupeBy(images, (image) => quizAssetKey(image.sourceUrl)),
       observedInAttempts: [attemptId],
-      sourceUrls: [sourceUrl]
+      sourceUrls: [sourceUrl],
+      collectedFrom: ["elolms-review"]
     }
   }
 
@@ -1377,33 +1511,80 @@
       map.set(key, question)
       return
     }
-    existing.observedInAttempts = [...new Set([...existing.observedInAttempts, ...question.observedInAttempts])]
-    existing.sourceUrls = [...new Set([...existing.sourceUrls, ...question.sourceUrls])]
-    if (!existing.rightAnswer && question.rightAnswer) existing.rightAnswer = question.rightAnswer
+    existing.observedInAttempts = [...new Set([...(existing.observedInAttempts || []), ...(question.observedInAttempts || [])])]
+    existing.sourceUrls = [...new Set([...(existing.sourceUrls || []), ...(question.sourceUrls || [])])]
+    existing.collectedFrom = [...new Set([...(existing.collectedFrom || []), ...(question.collectedFrom || [])])]
+    if (question.rightAnswer && (!existing.rightAnswer || question.collectedFrom?.includes("elolms-review"))) {
+      existing.rightAnswer = question.rightAnswer
+    }
     if (!existing.feedback && question.feedback) existing.feedback = question.feedback
-    if (!existing.correctAnswers.length && question.correctAnswers.length) existing.correctAnswers = question.correctAnswers
-    existing.images = dedupeBy([...existing.images, ...question.images], (image) => image.sourceUrl)
+    const existingOptions = Array.isArray(existing.options) ? existing.options : []
+    const incomingOptions = Array.isArray(question.options) ? question.options : []
+    if (!existingOptions.length) {
+      existing.options = incomingOptions
+    } else {
+      const incomingCorrectOptions = new Set(incomingOptions
+        .filter((option) => option.correct)
+        .map((option) => normalizeForKey(option.text)))
+      const existingOptionTexts = new Set(existingOptions.map((option) => normalizeForKey(option.text)))
+      existing.options = [
+        ...existingOptions.map((option) => ({
+          ...option,
+          correct: Boolean(option.correct || incomingCorrectOptions.has(normalizeForKey(option.text)))
+        })),
+        ...incomingOptions.filter((option) => !existingOptionTexts.has(normalizeForKey(option.text)))
+      ]
+    }
+    const flaggedAnswers = existing.options.filter((option) => option.correct).map((option) => option.key)
+    existing.correctAnswers = flaggedAnswers.length
+      ? [...new Set(flaggedAnswers)]
+      : [...new Set([...(existing.correctAnswers || []), ...(question.correctAnswers || [])])]
+    existing.images = dedupeBy([...(existing.images || []), ...(question.images || [])], (image) => quizAssetKey(image.sourceUrl))
+  }
+
+  function quizAssetKey(value) {
+    try {
+      const url = new URL(value, location.href)
+      const pathname = url.pathname.replace(
+        /\/question\/(questiontext|answer|generalfeedback|hint)\/\d+\/\d+\/(\d+\/.*)$/i,
+        "/question/$1/$2",
+      )
+      return `${url.origin}${pathname}`
+    } catch {
+      return cleanText(value)
+    }
   }
 
   function renderQuizMarkdown(data) {
+    const quizLabScan = data.collection.quizLabScan
+    const sources = data.collection.sources || []
     const lines = [
       `# ${data.quiz.title}`,
       "",
       `Nguồn: ${data.quiz.sourceUrl}`,
       "",
       `- Chế độ: ${data.collection.mode}`,
-      `- Lượt đã đọc: ${data.collection.completedReviewPages}`,
+      `- Lượt xem lại ELOLMS đã đọc: ${data.collection.completedReviewPages}`,
+      `- Câu từ trang xem lại: ${data.collection.reviewUniqueQuestions || 0}`,
+      ...(quizLabScan ? [
+        `- Câu Quiz Lab đã lưu: ${quizLabScan.uniqueQuestions}`,
+        `- Trạng thái Quiz Lab: ${quizLabScan.status} · ${quizLabScan.completedAttempts} lượt · ${quizLabScan.stopReason || "chưa có lý do dừng"}`
+      ] : []),
       `- Câu duy nhất: ${data.collection.uniqueQuestions}`,
       "",
-      "> Chỉ xuất các lượt đã làm mà ELOLMS đang cho phép xem lại; OU Yeah! không tự tạo lượt làm bài.",
+      sources.includes("quiz-lab-local")
+        ? "> Gồm các lượt ELOLMS cho xem lại và ngân hàng Quiz Lab đã lưu trong tiện ích; thao tác xuất gói không tạo lượt làm bài mới."
+        : "> Chỉ xuất các lượt đã làm mà ELOLMS đang cho phép xem lại; thao tác xuất gói không tạo lượt làm bài mới.",
       ""
     ]
     data.questions.forEach((question, index) => {
       lines.push(`## Câu ${index + 1}`, "", question.text || "_Không đọc được nội dung câu hỏi._", "")
       question.options.forEach((option) => lines.push(`- ${option.key}. ${option.text}${option.correct ? " **(đúng)**" : ""}`))
-      if (question.rightAnswer) lines.push("", `**Đáp án ELOLMS:** ${question.rightAnswer}`)
+      if (question.rightAnswer) lines.push("", `**Đáp án:** ${question.rightAnswer}`)
+      else if (question.correctAnswers?.length) lines.push("", `**Đáp án đúng:** ${question.correctAnswers.join(", ")}`)
       if (question.feedback) lines.push("", `**Phản hồi:** ${question.feedback}`)
       question.images.forEach((image) => lines.push("", `![${escapeMarkdown(image.alt)}](${image.localPath || image.sourceUrl})`))
+      if (question.collectedFrom?.length) lines.push("", `- Nguồn câu hỏi: ${question.collectedFrom.join(", ")}`)
       lines.push("")
     })
     return `${cleanupMarkdown(lines.join("\n"))}\n`
@@ -1589,6 +1770,7 @@ Do not infer content that is locked, missing or marked as failed.
         group: entity.group || null,
         materialType: entity.materialType || null,
         title: entity.title,
+        ...(entity.quizLabIncluded ? { quizLabIncluded: true } : {}),
         sourceUrl: entity.sourceUrl || null,
         localPath: entity.localPath
           ? entity.externalDownload ? entity.localPath : normalizeArchivePath(entity.localPath)
@@ -2343,6 +2525,6 @@ Do not infer content that is locked, missing or marked as failed.
   }
 
   function renderPackageReadme(context, snapshot) {
-    return `# Thư mục dữ liệu khóa học cho AI\n\nCác file trong thư mục này được tạo bởi OU Yeah! theo schema \`${FORMAT}\`. Không cần giải nén để đọc.\n\n## Bắt đầu\n\n- \`course-context.md\`: tóm tắt dễ đọc và chỉ dẫn cho AI agent.\n- \`course-index.json\`: danh mục có cấu trúc của toàn bộ thực thể.\n- \`access-report.json\`: mục truy cập được, bị khóa, bỏ qua hoặc lỗi.\n- \`snapshots/changes.json\`: thay đổi so với lần xuất gần nhất trên máy này.\n- \`FILE-TREE.txt\`: cây file trong \`00-AI/\`; đọc \`../AGENTS.md\` để biết quy tắc của khóa học.\n\n## Cấu trúc\n\n- \`00-course/\`: tổng quan, đề cương, lịch trình.\n- \`01-content/\`: trang nội dung và tài nguyên chung.\n- \`02-forums/\`: thông báo, thảo luận, Video Conference cùng ảnh/tệp đính kèm.\n- \`03-assignments/\`: đề bài, hướng dẫn và trạng thái bài nộp của tài khoản hiện tại.\n- \`04-assessments/\`: bài đánh giá và các lượt đã làm được phép xem lại.\n- \`05-learning/\`: điểm số của tài khoản hiện tại.\n- \`06-people/\`: danh sách thành viên nếu người dùng chủ động bật.\n- \`90-user-feed/\`: thông báo tài khoản, là nguồn phụ và có thể bị ELOLMS giới hạn số lượng.\n\n## Thay đổi\n\n- Mới: ${snapshot.changes.added.length}\n- Thay đổi: ${snapshot.changes.changed.length}\n- Không còn thấy: ${snapshot.changes.removed.length}\n\n## Quyền riêng tư và giới hạn\n\nThư mục có thể chứa nội dung lớp học, bài nộp, điểm cá nhân và thông tin thành viên. Hãy kiểm tra trước khi đưa lên dịch vụ AI hoặc chia sẻ. OU Yeah! không vượt qua điều kiện truy cập, không tự hoàn thành bài học và không lấy điểm/bài nộp của sinh viên khác.\n\nNguồn: ${context.course.sourceUrl}\n`
+    return `# Thư mục dữ liệu khóa học cho AI\n\nCác file trong thư mục này được tạo bởi OU Yeah! theo schema \`${FORMAT}\`. Không cần giải nén để đọc.\n\n## Bắt đầu\n\n- \`course-context.md\`: tóm tắt dễ đọc và chỉ dẫn cho AI agent.\n- \`course-index.json\`: danh mục có cấu trúc của toàn bộ thực thể.\n- \`access-report.json\`: mục truy cập được, bị khóa, bỏ qua hoặc lỗi.\n- \`snapshots/changes.json\`: thay đổi so với lần xuất gần nhất trên máy này.\n- \`FILE-TREE.txt\`: cây file trong \`00-AI/\`; đọc \`../AGENTS.md\` để biết quy tắc của khóa học.\n\n## Cấu trúc\n\n- \`00-course/\`: tổng quan, đề cương, lịch trình.\n- \`01-content/\`: trang nội dung và tài nguyên chung.\n- \`02-forums/\`: thông báo, thảo luận, Video Conference cùng ảnh/tệp đính kèm.\n- \`03-assignments/\`: đề bài, hướng dẫn và trạng thái bài nộp của tài khoản hiện tại.\n- \`04-assessments/\`: bài đánh giá, lượt ELOLMS cho xem lại và ngân hàng Quiz Lab đã lưu.\n- \`05-learning/\`: điểm số của tài khoản hiện tại.\n- \`06-people/\`: danh sách thành viên nếu người dùng chủ động bật.\n- \`90-user-feed/\`: thông báo tài khoản, là nguồn phụ và có thể bị ELOLMS giới hạn số lượng.\n\n## Thay đổi\n\n- Mới: ${snapshot.changes.added.length}\n- Thay đổi: ${snapshot.changes.changed.length}\n- Không còn thấy: ${snapshot.changes.removed.length}\n\n## Quyền riêng tư và giới hạn\n\nThư mục có thể chứa nội dung lớp học, bài nộp, điểm cá nhân và thông tin thành viên. Hãy kiểm tra trước khi đưa lên dịch vụ AI hoặc chia sẻ. OU Yeah! không vượt qua điều kiện truy cập, không tự hoàn thành bài học và không lấy điểm/bài nộp của sinh viên khác.\n\nNguồn: ${context.course.sourceUrl}\n`
   }
 })()

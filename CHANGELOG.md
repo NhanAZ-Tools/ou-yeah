@@ -2,6 +2,8 @@
 
 ## Chưa phát hành
 
+- Tải bộ đề Quiz Lab thành thư mục có README, Markdown, JSON và ảnh thay vì ZIP; hiển thị tiến trình tải từng tệp và tạo thư mục riêng cho mỗi lần xuất.
+- Gộp các câu hỏi Quiz Lab đã lưu vào gói học tập hợp nhất theo đúng quiz, cùng dữ liệu từ các lượt ELOLMS cho xem lại; ghi rõ trạng thái, nguồn từng câu và cảnh báo khi ngân hàng quét chưa hoàn tất.
 - Sửa lỗi `Invalid filename` khi xuất cây dữ liệu AI bằng cách chuẩn hóa ký tự điều khiển/tên thiết bị Windows và rút gọn tên file sâu nhất khi đường dẫn quá dài.
 - Giữ đầy đủ tên khóa học, chương và chủ đề trong cây học liệu; không còn cắt tên khóa học ở 24 ký tự hoặc bỏ phần tiêu đề sau dấu `:`.
 
@@ -26,7 +28,7 @@
 - Sửa race condition khi quiz chuyển thẳng sang trang làm bài mà không có hộp xác nhận: trang cũ trong back/forward cache không còn báo lỗi giả hoặc ghi đè tiến trình mới.
 - Chuyển toàn bộ vòng quét Quiz Lab sang iframe nền cùng ELOLMS: tab chính không còn reload/nhấp nháy giữa các lượt, nút `Tạm dừng` luôn khả dụng và khóa phiên ngăn tác vụ cũ tiếp tục sau khi người dùng tạm dừng.
 - Giữ nguyên ngân hàng câu hỏi khi tiếp tục hoặc quét bổ sung; đổi nhãn hành động thành `Tiếp tục quét`, `Tải bộ đề`, `Tải bộ đề hiện có` và `Quét bổ sung`, kèm icon phân biệt tải, tạm dừng, tiếp tục và quét.
-- Thu gọn Quiz Lab thành một hàng sau khi hoàn tất; phân biệt rõ giai đoạn quét và tạo ZIP, cảnh báo/chặn nhầm reload hoặc rời trang khi tác vụ còn chạy, cho tải lại dữ liệu đã gom nếu quá trình đóng gói bị gián đoạn và báo rõ khi phiên ELOLMS hết hạn.
+- Thu gọn Quiz Lab thành một hàng sau khi hoàn tất; phân biệt rõ giai đoạn quét và tải thư mục bộ đề, cảnh báo/chặn nhầm reload hoặc rời trang khi tác vụ còn chạy, cho tải lại dữ liệu đã gom nếu quá trình tải bị gián đoạn và báo rõ khi phiên ELOLMS hết hạn.
 
 ## 2.2.0 - 2026-07-30
 

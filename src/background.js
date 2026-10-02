@@ -15,6 +15,18 @@ const DEADLINE_REMINDER_DAILY_HOURS = [20, 21, 22, 23]
 const DEADLINE_REMINDER_TIME_ZONE = "Asia/Ho_Chi_Minh"
 const DEADLINE_REMINDER_TIME_ZONE_OFFSET_MS = 7 * 60 * 60 * 1000
 const DEADLINE_REMINDER_EXACT_GRACE_MS = 10 * 60 * 1000
+const QUIZ_BANK_FILE_MAX_BASE64_LENGTH = 48 * 1024 * 1024
+const QUIZ_BANK_ALLOWED_MIME_TYPES = new Set([
+  "application/json;charset=utf-8",
+  "application/octet-stream",
+  "image/avif",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/svg+xml",
+  "image/webp",
+  "text/markdown;charset=utf-8"
+])
 const DEADLINE_REMINDER_HANOI_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: DEADLINE_REMINDER_TIME_ZONE,
   year: "numeric",
@@ -212,6 +224,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "ou-yeah-download-course-file") {
     respondToAsyncRequest(handleCourseFileRequest(message, sender), sendResponse)
+    return true
+  }
+
+  if (message.type === "ou-yeah-download-quiz-bank-file") {
+    respondToAsyncRequest(handleQuizBankFileRequest(message, sender), sendResponse)
     return true
   }
 
@@ -737,6 +754,61 @@ async function handleCourseFileRequest(message, sender) {
 
   const filename = sanitizeDownloadPath(message.filename || "OU Yeah!/00-AI/ai-file")
   return trackedDirectDownload(blobUrl, filename, sender, "course-ai-file", "overwrite")
+}
+
+async function handleQuizBankFileRequest(message, sender) {
+  if (!isElolmsSender(sender)) {
+    return { ok: false, error: "Yêu cầu tải bộ đề không đến từ ELOLMS." }
+  }
+
+  const folderName = String(message.folderName || "")
+  if (!/^[a-z0-9][a-z0-9-]{0,179}$/i.test(folderName)) {
+    return { ok: false, error: "Tên thư mục bộ đề không hợp lệ." }
+  }
+
+  const relativePath = String(message.relativePath || "").replace(/\\/g, "/")
+  const isMetadataFile = ["README.md", "quiz-bank.md", "quiz-bank.json"].includes(relativePath)
+  const isQuestionImage = /^images\/question-\d+-\d+\.(?:avif|bin|gif|jpg|png|svg|webp)$/i.test(relativePath)
+  if (!isMetadataFile && !isQuestionImage) {
+    return { ok: false, error: "Đường dẫn tệp trong bộ đề không hợp lệ." }
+  }
+
+  const data = String(message.data || "")
+  if (!data || data.length > QUIZ_BANK_FILE_MAX_BASE64_LENGTH || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) {
+    return { ok: false, error: "Dữ liệu tệp trống, quá lớn hoặc không hợp lệ." }
+  }
+
+  const mimeType = String(message.mimeType || "application/octet-stream")
+  if (!QUIZ_BANK_ALLOWED_MIME_TYPES.has(mimeType)) {
+    return { ok: false, error: "Định dạng tệp bộ đề không hợp lệ." }
+  }
+
+  let blobUrl = ""
+  try {
+    await ensureOffscreenDocument()
+    const blobResponse = await chrome.runtime.sendMessage({
+      type: "ou-yeah-create-quiz-bank-blob",
+      data,
+      mimeType
+    })
+    if (!blobResponse?.ok || !/^blob:/i.test(blobResponse.blobUrl || "")) {
+      throw new Error(blobResponse?.error || "Không thể tạo tệp bộ đề để tải xuống.")
+    }
+    blobUrl = blobResponse.blobUrl
+
+    const filename = sanitizeDownloadPath(`OU Yeah!/Quiz Banks/${folderName}/${relativePath}`)
+    const downloadId = await chrome.downloads.download({
+      url: blobUrl,
+      filename,
+      conflictAction: "uniquify",
+      saveAs: false
+    })
+    setTimeout(() => revokeOffscreenObjectUrl(blobUrl), 60_000)
+    return { ok: true, downloadId, filename }
+  } catch (error) {
+    if (blobUrl) revokeOffscreenObjectUrl(blobUrl)
+    return { ok: false, error: readableError(error) }
+  }
 }
 
 function isElolmsSender(sender) {

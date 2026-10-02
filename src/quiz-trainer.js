@@ -50,10 +50,10 @@
     }
     if (latestState?.status === "exporting") {
       latestState.status = "error"
-      latestState.message = "Lần đóng gói trước đã bị gián đoạn. Bạn có thể tải lại phần bộ đề đã gom."
+      latestState.message = "Lần tải trước bị gián đoạn. Bạn có thể tải lại bộ đề đã gom."
       latestState.warnings = [...new Set([
         ...(latestState.warnings || []),
-        "Quá trình tạo ZIP bị gián đoạn do trang được tải lại hoặc đóng trước khi hoàn tất."
+        "Quá trình tải bộ đề bị gián đoạn do trang được tải lại hoặc đóng trước khi hoàn tất."
       ])]
       latestState.updatedAt = new Date().toISOString()
       await saveState(latestState)
@@ -260,12 +260,12 @@
 
     state.stopReason = "completed-reviews"
     state.status = "exporting"
-    state.message = `Đang tạo ZIP gồm ${state.questions.length} câu từ ${state.completedAttempts} lượt đã hoàn thành...`
+    state.message = `Đang chuẩn bị thư mục bộ đề gồm ${state.questions.length} câu từ ${state.completedAttempts} lượt đã hoàn thành...`
     await persistAndRender(state)
-    await exportQuizBank(state)
+    const exportResult = await exportQuizBank(state)
 
     state.status = "complete"
-    state.message = `Đã tải bộ đề gồm ${state.questions.length} câu từ ${state.completedAttempts} lượt đã hoàn thành.`
+    state.message = `Đã lưu ${exportResult.downloaded} tệp vào Downloads/OU Yeah!/Quiz Banks/${exportResult.folderName}.`
     await persistAndRender(state)
   }
 
@@ -704,7 +704,7 @@
       ? `đã chạm trần an toàn ${state.maxAttempts} lượt`
       : `${NO_NEW_QUESTION_STREAK_LIMIT} lượt liên tiếp không có câu mới`
     state.status = "complete"
-    state.message = `Đã quét xong sau ${state.completedAttempts} lượt (${reason}) · đã gom ${state.questions.length} câu. Bấm “Tải bộ đề” nếu muốn tạo ZIP.`
+    state.message = `Đã quét xong sau ${state.completedAttempts} lượt (${reason}) · đã gom ${state.questions.length} câu. Bấm “Tải bộ đề” để lưu các tệp vào thư mục.`
     state.updatedAt = new Date().toISOString()
     await saveState(state)
     latestState = state
@@ -720,11 +720,11 @@
     const state = await loadState(quizId)
     if (!state?.questions?.length) throw new Error("Chưa có bộ câu hỏi để tải.")
     state.status = "exporting"
-    state.message = `Đang tạo lại ZIP gồm ${state.questions.length} câu · vui lòng chờ...`
+    state.message = `Đang tải lại thư mục bộ đề gồm ${state.questions.length} câu · vui lòng chờ...`
     await persistAndRender(state)
-    await exportQuizBank(state)
+    const exportResult = await exportQuizBank(state)
     state.status = "complete"
-    state.message = `Đã tải lại bộ ôn tập gồm ${state.questions.length} câu.`
+    state.message = `Đã lưu ${exportResult.downloaded} tệp vào Downloads/OU Yeah!/Quiz Banks/${exportResult.folderName}.`
     await persistAndRender(state)
   }
 
@@ -735,14 +735,40 @@
     const markdown = renderQuizMarkdown(publicData)
     const readme = renderBundleReadme(publicData)
     const files = [
-      textZipFile("README.md", readme),
-      textZipFile("quiz-bank.md", markdown),
-      textZipFile("quiz-bank.json", `${JSON.stringify(publicData, null, 2)}\n`),
+      textQuizBankFile("README.md", readme, "text/markdown;charset=utf-8"),
+      textQuizBankFile("quiz-bank.md", markdown, "text/markdown;charset=utf-8"),
+      textQuizBankFile("quiz-bank.json", `${JSON.stringify(publicData, null, 2)}\n`, "application/json;charset=utf-8"),
       ...assetResult.files
     ]
-    const zipBlob = createZipBlob(files)
-    const filename = `${slugify(state.courseCode || state.quizTitle)}-${slugify(state.quizTitle)}-quiz-bank.zip`
-    downloadBlob(zipBlob, filename || "ou-yeah-quiz-bank.zip")
+    const courseSlug = slugify(state.courseCode || state.quizTitle).slice(0, 40)
+    const quizSlug = slugify(state.quizTitle).slice(0, 50)
+    const createdAt = new Date()
+    const exportTimestamp = [
+      createdAt.getFullYear(),
+      pad(createdAt.getMonth() + 1),
+      pad(createdAt.getDate()),
+      pad(createdAt.getHours()),
+      pad(createdAt.getMinutes()),
+      pad(createdAt.getSeconds())
+    ].join("")
+    const folderName = `${courseSlug}-${quizSlug}-quiz-bank-${exportTimestamp}`
+    let downloaded = 0
+    for (const file of files) {
+      const response = await chrome.runtime.sendMessage({
+        type: "ou-yeah-download-quiz-bank-file",
+        folderName,
+        relativePath: file.name,
+        mimeType: file.mimeType || quizBankMimeType(file.name),
+        data: encodeBase64(file.data)
+      })
+      if (!response?.ok) {
+        throw new Error(response?.error || `Không tải được ${file.name}.`)
+      }
+      downloaded += 1
+      state.message = `Đang tải tệp ${downloaded}/${files.length} vào thư mục ${folderName}...`
+      await persistAndRender(state)
+    }
+    return { downloaded, folderName }
   }
 
   async function downloadQuestionAssets(questions) {
@@ -772,7 +798,11 @@
           if (!contentType.startsWith("image/")) throw new Error("Phản hồi không phải ảnh")
           const extension = imageExtension(contentType, reference.image.sourceUrl)
           const path = `images/question-${pad(reference.questionIndex + 1)}-${pad(reference.imageIndex + 1)}.${extension}`
-          files.push({ name: path, data: new Uint8Array(await response.arrayBuffer()) })
+          files.push({
+            name: path,
+            data: new Uint8Array(await response.arrayBuffer()),
+            mimeType: quizBankMimeType(path)
+          })
           assetPaths[reference.image.sourceUrl] = path
         } catch (error) {
           assetPaths[reference.image.sourceUrl] = ""
@@ -786,8 +816,9 @@
 
   function extractReviewedQuestion(question, attemptId) {
     const questionText = extractQuestionText(question)
-    const options = extractAnswerOptions(question)
-    const correctAnswer = extractCorrectAnswer(question, options)
+    const extractedOptions = extractAnswerOptions(question)
+    const correctAnswer = extractCorrectAnswer(question, extractedOptions)
+    const options = markCorrectAnswerOptions(extractedOptions, correctAnswer)
     const images = extractQuestionImages(question)
     const type = Array.from(question.classList)
       .find((className) => !["que", "deferredfeedback", "correct", "incorrect", "notanswered"].includes(className)) || "unknown"
@@ -848,6 +879,19 @@
     return correctOptions.join("; ")
   }
 
+  function markCorrectAnswerOptions(options, correctAnswer) {
+    const answerKey = normalizeForKey(correctAnswer)
+    if (!answerKey) return options
+    return options.map((option) => {
+      const optionKey = normalizeForKey(option.text)
+      const labeledOptionKey = normalizeForKey(`${option.label}. ${option.text}`)
+      return {
+        ...option,
+        correct: option.correct || answerKey === optionKey || answerKey === labeledOptionKey
+      }
+    })
+  }
+
   function extractQuestionImages(question) {
     const images = []
     question.querySelectorAll(".qtext img, .formulation img, .answer img").forEach((image) => {
@@ -858,7 +902,7 @@
       if (!sourceUrl) return
       images.push({ sourceUrl, alt: alt || "Ảnh trong câu hỏi" })
     })
-    return dedupeBy(images, (image) => image.sourceUrl)
+    return dedupeBy(images, (image) => stableAssetKey(image.sourceUrl))
   }
 
   function processReviewedQuestions(state, questions, attemptId) {
@@ -889,8 +933,16 @@
       }
 
       current.correctAnswer = incoming.correctAnswer || current.correctAnswer
-      if ((!current.options || !current.options.length) && incoming.options.length) current.options = incoming.options
-      current.images = dedupeBy([...(current.images || []), ...incoming.images], (image) => image.sourceUrl)
+      if (!current.options || !current.options.length) {
+        current.options = incoming.options
+      } else {
+        const incomingOptions = new Map(incoming.options.map((option) => [normalizeForKey(option.text), option]))
+        current.options = current.options.map((option) => {
+          const matchingOption = incomingOptions.get(normalizeForKey(option.text))
+          return matchingOption?.correct && !option.correct ? { ...option, correct: true } : option
+        })
+      }
+      current.images = dedupeBy([...(current.images || []), ...(incoming.images || [])], (image) => stableAssetKey(image.sourceUrl))
       current.attempts = [...new Set([...(current.attempts || []), ...incoming.attempts])]
     })
   }
@@ -912,7 +964,11 @@
   function stableAssetKey(value) {
     try {
       const url = new URL(value, location.href)
-      return `${url.origin}${url.pathname}`
+      const pathname = url.pathname.replace(
+        /\/question\/(questiontext|answer|generalfeedback|hint)\/\d+\/\d+\/(\d+\/.*)$/i,
+        "/question/$1/$2",
+      )
+      return `${url.origin}${pathname}`
     } catch {
       return cleanText(value)
     }
@@ -923,6 +979,7 @@
     questions.forEach((question) => {
       const normalizedQuestion = {
         ...question,
+        options: markCorrectAnswerOptions(question.options || [], question.correctAnswer),
         id: canonicalQuestionId(question.question, question.options, question.images)
       }
       mergeQuestionBank(normalizedState, [normalizedQuestion])
@@ -1032,8 +1089,8 @@
     const collectionDescription = data.collection.mode === QUIZ_MODE_COMPLETED_REVIEW
       ? `được đọc từ ${data.collection.completedAttempts} lượt đã hoàn thành và cho phép Xem lại của quiz \`${data.quiz.title}\`; tiện ích không tạo hoặc nộp lượt mới`
       : `được tổng hợp từ ${data.collection.completedAttempts} lượt làm quiz \`${data.quiz.title}\``
-    return `# Gói bộ đề OU Yeah!\n\n`
-      + `Gói này chứa bộ câu hỏi ${collectionDescription}.\n\n`
+    return `# Bộ đề OU Yeah!\n\n`
+      + `Thư mục này chứa bộ câu hỏi ${collectionDescription}.\n\n`
       + `- \`quiz-bank.md\`: bản đọc nhanh và phù hợp để đưa vào AI.\n`
       + `- \`quiz-bank.json\`: dữ liệu có cấu trúc gồm câu hỏi, lựa chọn, đáp án đúng và lượt xuất hiện.\n`
       + `- \`images/\`: ảnh gốc xuất hiện trong câu hỏi hoặc lựa chọn; Markdown dùng đường dẫn tương đối đến thư mục này.\n\n`
@@ -1071,7 +1128,7 @@
       title.textContent = currentStatus === "complete"
         ? "Bộ đề đã sẵn sàng"
         : currentStatus === "exporting"
-          ? "Đang tạo file bộ đề"
+          ? "Đang tải bộ đề"
           : currentStatus === "error"
             ? "Quiz Lab cần bạn kiểm tra"
             : currentStatus === "stopped"
@@ -1083,14 +1140,14 @@
     if (guard instanceof HTMLElement) {
       guard.hidden = !isBusy
       guard.textContent = isExporting
-        ? "Đang tạo và tải file ZIP. Hãy chờ đến khi Chrome nhận file; đừng reload, đóng tab hoặc rời trang."
+        ? "Đang tải các tệp vào thư mục bộ đề. Hãy chờ đến khi Chrome nhận hết tệp; đừng reload, đóng tab hoặc rời trang."
         : "Đang quét trong nền. Bạn có thể đổi sang tab khác, nhưng hãy giữ tab này mở. Nếu cần reload, đóng tab hoặc rời trang, hãy bấm Tạm dừng trước."
     }
     if (action instanceof HTMLButtonElement) {
       action.textContent = isRunning
         ? "Tạm dừng"
         : isExporting
-          ? "Đang đóng gói…"
+          ? "Đang tải…"
           : currentStatus === "complete"
             ? "Quét bổ sung"
             : currentStatus === "stopped"
@@ -1134,7 +1191,7 @@
     if (count) count.textContent = `${reviewCount} lượt xem lại · ${questionCount} câu · chỉ đọc dữ liệu đã nộp`
     if (guard instanceof HTMLElement) {
       guard.hidden = !isExporting
-      guard.textContent = "Đang đọc trang Xem lại và tạo file ZIP. Không reload, đóng tab hoặc rời trang cho đến khi Chrome nhận file."
+      guard.textContent = "Đang đọc trang Xem lại và tải các tệp vào thư mục bộ đề. Không reload, đóng tab hoặc rời trang cho đến khi Chrome nhận hết tệp."
     }
     if (action instanceof HTMLButtonElement) {
       action.textContent = currentStatus === "locked"
@@ -1347,9 +1404,7 @@
     if (!state || ![FORMAT_VERSION, LEGACY_FORMAT_VERSION].includes(state.format)) return null
 
     const normalized = normalizeState(state)
-    const storedQuestionCount = Array.isArray(state.questions) ? state.questions.length : 0
-    const questionBankChanged = normalized.questions.length !== storedQuestionCount
-      || normalized.questions.some((question, index) => question.id !== state.questions[index]?.id)
+    const questionBankChanged = JSON.stringify(normalized.questions) !== JSON.stringify(state.questions || [])
     const executionModeChanged = state.executionMode !== normalized.executionMode
     if (questionBankChanged && normalized.status === "complete") {
       normalized.message = `Đã tải bộ ôn tập gồm ${normalized.questions.length} câu.`
@@ -1410,109 +1465,31 @@
     })
   }
 
-  function textZipFile(name, text) {
-    return { name, data: new TextEncoder().encode(text) }
+  function textQuizBankFile(name, text, mimeType) {
+    return { name, data: new TextEncoder().encode(text), mimeType }
   }
 
-  function createZipBlob(files) {
-    const localParts = []
-    const centralParts = []
-    let offset = 0
-    const { dosDate, dosTime } = dateToDos(new Date())
-
-    files.forEach((file) => {
-      const nameBytes = new TextEncoder().encode(file.name.replace(/\\/g, "/"))
-      const data = file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data)
-      const checksum = crc32(data)
-      const localHeader = new Uint8Array(30 + nameBytes.length)
-      const localView = new DataView(localHeader.buffer)
-      localView.setUint32(0, 0x04034b50, true)
-      localView.setUint16(4, 20, true)
-      localView.setUint16(6, 0x0800, true)
-      localView.setUint16(8, 0, true)
-      localView.setUint16(10, dosTime, true)
-      localView.setUint16(12, dosDate, true)
-      localView.setUint32(14, checksum, true)
-      localView.setUint32(18, data.length, true)
-      localView.setUint32(22, data.length, true)
-      localView.setUint16(26, nameBytes.length, true)
-      localView.setUint16(28, 0, true)
-      localHeader.set(nameBytes, 30)
-      localParts.push(localHeader, data)
-
-      const centralHeader = new Uint8Array(46 + nameBytes.length)
-      const centralView = new DataView(centralHeader.buffer)
-      centralView.setUint32(0, 0x02014b50, true)
-      centralView.setUint16(4, 20, true)
-      centralView.setUint16(6, 20, true)
-      centralView.setUint16(8, 0x0800, true)
-      centralView.setUint16(10, 0, true)
-      centralView.setUint16(12, dosTime, true)
-      centralView.setUint16(14, dosDate, true)
-      centralView.setUint32(16, checksum, true)
-      centralView.setUint32(20, data.length, true)
-      centralView.setUint32(24, data.length, true)
-      centralView.setUint16(28, nameBytes.length, true)
-      centralView.setUint16(30, 0, true)
-      centralView.setUint16(32, 0, true)
-      centralView.setUint16(34, 0, true)
-      centralView.setUint16(36, 0, true)
-      centralView.setUint32(38, 0, true)
-      centralView.setUint32(42, offset, true)
-      centralHeader.set(nameBytes, 46)
-      centralParts.push(centralHeader)
-      offset += localHeader.length + data.length
-    })
-
-    const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0)
-    const end = new Uint8Array(22)
-    const endView = new DataView(end.buffer)
-    endView.setUint32(0, 0x06054b50, true)
-    endView.setUint16(4, 0, true)
-    endView.setUint16(6, 0, true)
-    endView.setUint16(8, files.length, true)
-    endView.setUint16(10, files.length, true)
-    endView.setUint32(12, centralSize, true)
-    endView.setUint32(16, offset, true)
-    endView.setUint16(20, 0, true)
-    return new Blob([...localParts, ...centralParts, end], { type: "application/zip" })
+  function quizBankMimeType(filename) {
+    const extension = String(filename || "").split(".").pop()?.toLowerCase()
+    return ({
+      avif: "image/avif",
+      bin: "application/octet-stream",
+      gif: "image/gif",
+      jpg: "image/jpeg",
+      png: "image/png",
+      svg: "image/svg+xml",
+      webp: "image/webp"
+    })[extension] || "application/octet-stream"
   }
 
-  function crc32(bytes) {
-    let crc = 0xffffffff
-    for (const byte of bytes) crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff]
-    return (crc ^ 0xffffffff) >>> 0
-  }
-
-  const CRC32_TABLE = (() => {
-    const table = new Uint32Array(256)
-    for (let index = 0; index < 256; index += 1) {
-      let value = index
-      for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : value >>> 1
-      table[index] = value >>> 0
+  function encodeBase64(value) {
+    const bytes = value instanceof Uint8Array ? value : new Uint8Array(value)
+    let binary = ""
+    const chunkSize = 0x8000
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
     }
-    return table
-  })()
-
-  function dateToDos(date) {
-    const year = Math.max(1980, date.getFullYear())
-    return {
-      dosTime: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
-      dosDate: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate()
-    }
-  }
-
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement("a")
-    anchor.href = url
-    anchor.download = filename
-    anchor.rel = "noopener"
-    anchor.hidden = true
-    document.documentElement.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    return btoa(binary)
   }
 
   function injectTheme() {
