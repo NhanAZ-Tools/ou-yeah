@@ -1167,7 +1167,8 @@ test("release metadata and packaging script are version aligned", async () => {
   assert.match(releaseScript, /OU-Yeah-v\$version/)
   assert.match(releaseScript, /src\/forum-export\.js/)
   assert.match(releaseScript, /src\/course-data-export\.js/)
-  assert.match(releaseScript, /Get-FileHash -LiteralPath \$zipPath -Algorithm SHA256/)
+  assert.match(releaseScript, /\[System\.Security\.Cryptography\.SHA256\]::Create\(\)/)
+  assert.match(releaseScript, /\$hashAlgorithm\.ComputeHash\(\$zipStream\)/)
   assert.match(releaseScript, /Release archive is missing/)
 })
 
