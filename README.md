@@ -2,12 +2,14 @@
 
 > Học OU, nhẹ cái đầu.
 
-Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách đang đọc trên `thuquan.ou.edu.vn` thành PDF.
+Chrome extension hỗ trợ theo dõi deadline, nhắc lịch VC, học và tải học liệu, xuất dữ liệu khóa học/bộ đề trên `elolms.ou.edu.vn`, cùng tải sách đang đọc trên `thuquan.ou.edu.vn` thành PDF.
 
 ## Tính năng
 
-- Unified course tree: AI-readable Markdown/JSON files are written directly under `Downloads/OU Yeah!/<course>/00-AI/`, with `AGENTS.md` at the course root. Human-readable Video, Slide and Script files stay in the sibling chapter/topic/part tree and are mapped by `materials-download.json`.
-
+- Ghi dữ liệu Markdown/JSON cho AI vào `Downloads/OU Yeah!/<Tên khóa học>/00-AI/`, với `AGENTS.md` ở thư mục khóa học. Video/Slide/Script được lưu trong cây chương/chủ đề/phần bên cạnh và có chỉ mục `materials-download.json`.
+- Thêm trang `Deadline` theo tháng với lọc môn học, tìm tên bài, `Cần làm hôm nay`, trễ hạn đã/chưa nộp và mặc định `Ẩn đã thực hiện`. Hạn gia hạn được đặt dưới bài gốc để tiện mở làm tiếp.
+- Tô đỏ các mục cần thực hiện hôm nay, hiện đếm ngược, gộp lịch VC trùng từ nhiều nguồn và xuất lịch `.ics`.
+- Nhắc deadline và VC bằng thông báo Chrome theo ngày lịch và số giờ còn lại, dùng múi giờ Việt Nam.
 - Tua ngược / tua nhanh `5 giây`.
 - Chọn tốc độ phát trực tiếp: `0.5x` đến `4x`.
 - Tải video nếu trang cung cấp file trực tiếp hoặc HLS không mã hóa.
@@ -30,17 +32,17 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
 
 ## Cài đặt thủ công
 
-1. Tải hoặc clone repo `ou-yeah`.
+1. Tải ZIP từ [GitHub Releases](https://github.com/NhanAZ-Tools/ou-yeah/releases/latest) rồi giải nén, hoặc clone repo `ou-yeah`.
 2. Mở Chrome và vào `chrome://extensions`.
 3. Bật `Developer mode`.
 4. Chọn `Load unpacked`.
-5. Chọn thư mục repo `ou-yeah`.
+5. Chọn thư mục chứa `manifest.json`.
 6. Mở lại trang bài giảng ELOLMS hoặc trang đọc sách Thư Quán OU.
 
 ## Cách dùng
 
+- Mở mục `Deadline` trên thanh điều hướng ELOLMS để xem theo tháng; chọn `Cần làm hôm nay` để lọc bài còn cần nộp trong ngày, hoặc các bộ lọc trễ hạn đã/chưa nộp. `Đồng bộ lại` cập nhật dữ liệu mới từ phiên đăng nhập hiện tại, còn `Xuất toàn bộ lịch .ics` tạo lịch để nhập vào ứng dụng lịch.
 - Khi đọc cây `00-AI/` bằng Codex hoặc agent khác, chỉ nạp nội dung Script. Video và Slide vẫn được lưu cho người học nhưng phải loại khỏi AI context; chính sách này được ghi trong `AGENTS.md`, `course-index.json` và `materials-download.json`.
-
 - Rê chuột vào vùng video để hiện thanh điều khiển nhanh.
 - Bấm `-5s` hoặc `+5s` để tua.
 - Bấm nút tốc độ để chọn nhanh tốc độ phát.
@@ -58,6 +60,20 @@ Chrome extension hỗ trợ học video trên `elolms.ou.edu.vn` và tải sách
   - `Alt + ←`: tua ngược 5 giây
   - `Alt + →`: tua nhanh 5 giây
   - `Alt + ↑`: đổi tốc độ theo vòng preset
+
+## Lịch nhắc deadline và VC
+
+Các mốc ngày được tính theo `Asia/Ho_Chi_Minh`. Tiện ích kết hợp nhắc theo ngày lịch với mốc giờ chính xác:
+
+| Mục cần nhắc | Thời điểm |
+| --- | --- |
+| Deadline còn 3 ngày lịch | 20:00 |
+| Deadline còn 1 ngày lịch | 20:00, 21:00, 22:00, 23:00 |
+| Deadline còn đúng 72 giờ hoặc 24 giờ | Đúng mốc giờ tương ứng |
+| VC/meeting diễn ra ngày mai | 20:00 |
+| VC/meeting còn 3, 2 hoặc 1 giờ | Đúng từng mốc giờ trước buổi học |
+
+Nhắc lịch dùng dữ liệu đã đồng bộ từ trang `Deadline` và chạy khi Chrome hoạt động. Mục đã hoàn thành hoặc đã quá hạn không được nhắc; cùng một mục không gửi lặp trong cùng khung giờ nếu hai cách tính trùng nhau. Bấm thông báo để mở trang Deadline. Khi bài nộp hoặc lịch VC thay đổi trên ELOLMS, mở trang Deadline hoặc bấm `Đồng bộ lại` để cập nhật.
 
 ## Tuyên bố từ chối trách nhiệm
 
@@ -87,7 +103,7 @@ Tiện ích không được thiết kế để vượt DRM, phá mã hóa, vư�
 ## Kiểm tra mã nguồn
 
 ```powershell
-npm install
+npm ci
 npm run check
 ```
 
@@ -99,4 +115,6 @@ Lệnh `check` chạy ESLint (bao gồm kiểm tra Promise bị bỏ rơi), Type
 npm run release
 ```
 
-Lệnh `release` chạy toàn bộ kiểm tra, xác nhận version trong `package.json` và `manifest.json` khớp nhau, rồi đóng gói Chrome extension vào `dist/OU-Yeah-v<version>.zip` kèm file SHA-256.
+Lệnh `release` chạy toàn bộ kiểm tra, xác nhận phiên bản trong `package.json`, `package-lock.json` và `manifest.json` khớp nhau, rồi đóng gói Chrome extension vào `dist/OU-Yeah-v<version>.zip` kèm tệp SHA-256.
+
+Gói được kiểm tra các tệp runtime mà manifest khai báo, phiên bản manifest bên trong ZIP và việc loại bỏ tệp phát triển. Bản phát hành trên GitHub dùng tag `v<version>` cùng ZIP và SHA-256 của đúng commit đã kiểm tra.

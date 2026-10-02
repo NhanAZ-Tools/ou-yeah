@@ -774,7 +774,11 @@ async function handleQuizBankFileRequest(message, sender) {
   }
 
   const data = String(message.data || "")
-  if (!data || data.length > QUIZ_BANK_FILE_MAX_BASE64_LENGTH || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) {
+  const isValidData = data.length > 0
+    && data.length <= QUIZ_BANK_FILE_MAX_BASE64_LENGTH
+    && data.length % 4 === 0
+    && /^[A-Za-z0-9+/]+={0,2}$/.test(data)
+  if (!isValidData) {
     return { ok: false, error: "Dữ liệu tệp trống, quá lớn hoặc không hợp lệ." }
   }
 
@@ -803,12 +807,56 @@ async function handleQuizBankFileRequest(message, sender) {
       conflictAction: "uniquify",
       saveAs: false
     })
-    setTimeout(() => revokeOffscreenObjectUrl(blobUrl), 60_000)
+    await waitForQuizBankDownload(downloadId)
     return { ok: true, downloadId, filename }
   } catch (error) {
-    if (blobUrl) revokeOffscreenObjectUrl(blobUrl)
     return { ok: false, error: readableError(error) }
+  } finally {
+    if (blobUrl) revokeOffscreenObjectUrl(blobUrl)
   }
+}
+
+/** @returns {Promise<void>} */
+function waitForQuizBankDownload(downloadId) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let timeoutId
+
+    function finish(error = null) {
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutId)
+      chrome.downloads.onChanged.removeListener(onChanged)
+      if (error) reject(error)
+      else resolve()
+    }
+
+    function onChanged(delta) {
+      if (delta.id !== downloadId) return
+      if (delta.state?.current === "complete") finish()
+      else if (delta.state?.current === "interrupted" || delta.error?.current) {
+        finish(new Error(delta.error?.current || "Tệp bộ đề tải xuống đã bị gián đoạn."))
+      }
+    }
+
+    chrome.downloads.onChanged.addListener(onChanged)
+    timeoutId = setTimeout(() => {
+      finish(new Error("Chrome chưa lưu xong tệp bộ đề sau 2 phút. Hãy thử tải lại."))
+      chrome.downloads.cancel(downloadId).catch(() => {})
+    }, 120_000)
+
+    // A small local file can finish before its download ID reaches this listener.
+    chrome.downloads.search({ id: downloadId })
+      .then(([download]) => {
+        if (download?.state === "complete") finish()
+        else if (download?.state === "interrupted") {
+          finish(new Error(download.error || "Tệp bộ đề tải xuống đã bị gián đoạn."))
+        } else if (!download) {
+          finish(new Error("Không tìm thấy tệp bộ đề trong hàng đợi tải xuống của Chrome."))
+        }
+      })
+      .catch(finish)
+  })
 }
 
 function isElolmsSender(sender) {

@@ -2,21 +2,35 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $packagePath = Join-Path $repoRoot "package.json"
+$lockPath = Join-Path $repoRoot "package-lock.json"
 $manifestPath = Join-Path $repoRoot "manifest.json"
 $distPath = Join-Path $repoRoot "dist"
 
 $packageJson = Get-Content -LiteralPath $packagePath -Raw -Encoding UTF8 | ConvertFrom-Json
+$lockVersionsJson = & node -e "const fs = require('node:fs'); const lock = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(JSON.stringify({ version: lock.version, rootVersion: lock.packages[''].version }));" $lockPath
+if ($LASTEXITCODE -ne 0) {
+  throw "Cannot read version metadata from package-lock.json"
+}
+$lockVersions = $lockVersionsJson | ConvertFrom-Json
 $manifestJson = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 if ($packageJson.version -ne $manifestJson.version) {
   throw "Version mismatch: package.json=$($packageJson.version), manifest.json=$($manifestJson.version)"
 }
 
+if ($packageJson.version -ne $lockVersions.version -or $packageJson.version -ne $lockVersions.rootVersion) {
+  throw "Version mismatch: package-lock.json must match package.json and manifest.json"
+}
+
 $version = $packageJson.version
+if ($version -notmatch "^\d+\.\d+\.\d+$") {
+  throw "Invalid Chrome extension release version: $version"
+}
 $releaseName = "OU-Yeah-v$version"
 $zipPath = Join-Path $distPath "$releaseName.zip"
 $checksumPath = Join-Path $distPath "$releaseName.sha256"
-$stagingPath = Join-Path ([System.IO.Path]::GetTempPath()) "ou-yeah-release-$([System.Guid]::NewGuid().ToString('N'))"
+$tempRootPath = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+$stagingPath = Join-Path $tempRootPath "ou-yeah-release-$([System.Guid]::NewGuid().ToString('N'))"
 
 $rootFiles = @(
   "manifest.json",
@@ -55,6 +69,7 @@ try {
       "src/quiz-trainer.js",
       "src/course-data-export.js",
       "src/background.js",
+      "src/offscreen.html",
       "src/offscreen.js",
       "src/notifications.js",
       "src/notifications.css",
@@ -65,10 +80,28 @@ try {
       "src/icons/envelope-dot.svg"
     )
 
-    foreach ($entry in $requiredEntries) {
+    $requiredEntries += $manifestJson.background.service_worker
+    $requiredEntries += $manifestJson.icons.PSObject.Properties | ForEach-Object { $_.Value }
+    $requiredEntries += $manifestJson.action.default_icon.PSObject.Properties | ForEach-Object { $_.Value }
+    foreach ($contentScript in $manifestJson.content_scripts) {
+      $requiredEntries += @($contentScript.js)
+      $requiredEntries += @($contentScript.css)
+    }
+
+    foreach ($entry in ($requiredEntries | Where-Object { $_ } | Select-Object -Unique)) {
       if ($entries -notcontains $entry) {
         throw "Release archive is missing $entry"
       }
+    }
+
+    $manifestReader = New-Object System.IO.StreamReader($archive.GetEntry("manifest.json").Open())
+    try {
+      $packedManifest = $manifestReader.ReadToEnd() | ConvertFrom-Json
+      if ($packedManifest.version -ne $version) {
+        throw "Release archive manifest version does not match $version"
+      }
+    } finally {
+      $manifestReader.Dispose()
     }
 
     $forbiddenEntry = $entries | Where-Object {
@@ -86,13 +119,26 @@ try {
     $archive.Dispose()
   }
 
-  $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  $hashAlgorithm = [System.Security.Cryptography.SHA256]::Create()
+  $zipStream = [System.IO.File]::OpenRead($zipPath)
+  try {
+    $hash = [System.BitConverter]::ToString($hashAlgorithm.ComputeHash($zipStream)).Replace("-", "").ToLowerInvariant()
+  } finally {
+    $zipStream.Dispose()
+    $hashAlgorithm.Dispose()
+  }
   "$hash  $releaseName.zip" | Set-Content -LiteralPath $checksumPath -Encoding ASCII -NoNewline
 
   Write-Output "Release: $zipPath"
   Write-Output "SHA256:  $hash"
 } finally {
   if (Test-Path -LiteralPath $stagingPath) {
-    Remove-Item -LiteralPath $stagingPath -Recurse -Force
+    $resolvedStagingPath = [System.IO.Path]::GetFullPath($stagingPath)
+    $tempPrefix = $tempRootPath.TrimEnd([char[]]@('\', '/')) + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $resolvedStagingPath.StartsWith($tempPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+        [System.IO.Path]::GetFileName($resolvedStagingPath) -notmatch '^ou-yeah-release-[0-9a-f]{32}$') {
+      throw "Refusing to remove a staging directory outside the release temp folder"
+    }
+    Remove-Item -LiteralPath $resolvedStagingPath -Recurse -Force
   }
 }

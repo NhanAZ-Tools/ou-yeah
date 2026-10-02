@@ -2,10 +2,19 @@
 
 ## Chưa phát hành
 
+## 2.4.0 - 2026-10-02
+
+- Thêm trang Deadline theo tháng với lọc môn học, tìm bài, bộ lọc mặc định `Ẩn đã thực hiện`, `Cần làm hôm nay` và trễ hạn đã/chưa nộp; hiển thị hạn gia hạn dưới bài gốc.
+- Tô đỏ deadline cần làm hôm nay và hiện đếm ngược; gộp sự kiện/VC trùng từ lịch và diễn đàn, loại các link ngôn ngữ khóa học bị nhận nhầm, xuất lịch `.ics` và dùng cache để mở trang nhanh hơn.
+- Thêm thông báo Chrome theo giờ Việt Nam: deadline còn 3 ngày vào 20:00, còn 1 ngày vào 20:00/21:00/22:00/23:00, cùng các mốc chính xác 72/24 giờ; VC nhắc ngày trước lúc 20:00 và trước buổi học 3/2/1 giờ. Không gửi lặp cùng mục trong cùng khung giờ.
 - Tải bộ đề Quiz Lab thành thư mục có README, Markdown, JSON và ảnh thay vì ZIP; hiển thị tiến trình tải từng tệp và tạo thư mục riêng cho mỗi lần xuất.
+- Chỉ báo tải xong bộ đề sau khi Chrome xác nhận từng tệp hoàn tất; dừng hàng đợi khi tệp bị gián đoạn và thu hồi Blob URL sau khi lưu.
+- Sửa nhận diện ảnh câu hỏi qua nhiều lượt làm bài và gộp trạng thái đáp án đúng; chỉ đọc các trang Xem lại đã nộp cho quiz kết thúc chương.
 - Gộp các câu hỏi Quiz Lab đã lưu vào gói học tập hợp nhất theo đúng quiz, cùng dữ liệu từ các lượt ELOLMS cho xem lại; ghi rõ trạng thái, nguồn từng câu và cảnh báo khi ngân hàng quét chưa hoàn tất.
 - Sửa lỗi `Invalid filename` khi xuất cây dữ liệu AI bằng cách chuẩn hóa ký tự điều khiển/tên thiết bị Windows và rút gọn tên file sâu nhất khi đường dẫn quá dài.
 - Giữ đầy đủ tên khóa học, chương và chủ đề trong cây học liệu; không còn cắt tên khóa học ở 24 ký tự hoặc bỏ phần tiêu đề sau dấu `:`.
+- Sửa khoảng trống và cuộn Course Map để nội dung khóa học không bị drawer che.
+- Đồng bộ version manifest/package/lockfile, mô tả và tài liệu; cập nhật kiểm tra hồi quy cho tải thư mục, bộ lọc Deadline và lịch nhắc; kiểm tra gói phát hành đầy đủ runtime và checksum.
 
 ## 2.3.0 - 2026-08-10
 
@@ -28,7 +37,7 @@
 - Sửa race condition khi quiz chuyển thẳng sang trang làm bài mà không có hộp xác nhận: trang cũ trong back/forward cache không còn báo lỗi giả hoặc ghi đè tiến trình mới.
 - Chuyển toàn bộ vòng quét Quiz Lab sang iframe nền cùng ELOLMS: tab chính không còn reload/nhấp nháy giữa các lượt, nút `Tạm dừng` luôn khả dụng và khóa phiên ngăn tác vụ cũ tiếp tục sau khi người dùng tạm dừng.
 - Giữ nguyên ngân hàng câu hỏi khi tiếp tục hoặc quét bổ sung; đổi nhãn hành động thành `Tiếp tục quét`, `Tải bộ đề`, `Tải bộ đề hiện có` và `Quét bổ sung`, kèm icon phân biệt tải, tạm dừng, tiếp tục và quét.
-- Thu gọn Quiz Lab thành một hàng sau khi hoàn tất; phân biệt rõ giai đoạn quét và tải thư mục bộ đề, cảnh báo/chặn nhầm reload hoặc rời trang khi tác vụ còn chạy, cho tải lại dữ liệu đã gom nếu quá trình tải bị gián đoạn và báo rõ khi phiên ELOLMS hết hạn.
+- Thu gọn Quiz Lab thành một hàng sau khi hoàn tất; phân biệt rõ giai đoạn quét và tạo ZIP, cảnh báo/chặn nhầm reload hoặc rời trang khi tác vụ còn chạy, cho tải lại dữ liệu đã gom nếu quá trình đóng gói bị gián đoạn và báo rõ khi phiên ELOLMS hết hạn.
 
 ## 2.2.0 - 2026-07-30
 
