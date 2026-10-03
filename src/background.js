@@ -340,6 +340,7 @@ async function restoreDeadlineReminderAlarms() {
     const events = await readDeadlineReminderEvents()
     const now = Date.now()
     await deliverExactDeadlineReminders(events, now)
+    await deliverNextDayMeetingReminders(events, now)
     await scheduleNextExactDeadlineAlarm(events, now)
   })
 }
@@ -416,17 +417,20 @@ function handleDeadlineDailyAlarm(hour, scheduledTime = Date.now()) {
     const oneDayDeadlineReminders = daysByEvent
       .filter(({ event, daysUntil }) => event.kind === "deadline" && !event.completed && event.date > now && daysUntil === 1)
       .map(({ event }) => ({ event, type: `deadline-1-day-${hour}` }))
-    const oneDayMeetingReminders = hour === 20
-      ? daysByEvent
-        .filter(({ event, daysUntil }) => event.kind === "meeting" && !event.completed && event.date > now && daysUntil === 1)
-        .map(({ event }) => ({ event, type: "meeting-1-day" }))
-      : []
-
     await deliverDeadlineReminderGroup("deadline-3-days", scheduledTime, threeDayReminders)
     await deliverDeadlineReminderGroup(`deadline-1-day-${hour}`, scheduledTime, oneDayDeadlineReminders)
-    await deliverDeadlineReminderGroup("meeting-1-day", scheduledTime, oneDayMeetingReminders)
+    await deliverNextDayMeetingReminders(events, now)
     await ensureDeadlineDailyAlarm(hour)
   })
+}
+
+async function deliverNextDayMeetingReminders(events, now) {
+  if (hanoiReminderDateParts(now).hour < 20) return
+  const reminders = events
+    .filter((event) => event.kind === "meeting" && !event.completed && event.date > now
+      && hanoiDayDifference(now, event.date) === 1)
+    .map((event) => ({ event, type: "meeting-1-day" }))
+  await deliverDeadlineReminderGroup("meeting-1-day", now, reminders)
 }
 
 async function deliverExactDeadlineReminders(events, now) {
@@ -456,11 +460,27 @@ async function deliverDeadlineReminderGroup(type, scheduledAt, reminders) {
     && typeof stored[DEADLINE_REMINDER_DELIVERIES_KEY] === "object"
     ? { ...stored[DEADLINE_REMINDER_DELIVERIES_KEY] }
     : {}
+  const reminderDay = bucket.slice(0, 10)
+  let skippedMeetingReminders = false
   const freshReminders = reminders.filter(({ event, scheduledAt: eventScheduledAt }) => {
     const eventBucket = hanoiHourBucket(eventScheduledAt || scheduledAt)
-    return deliveries[deadlineReminderEventKey(event)]?.bucket !== eventBucket
+    const key = deadlineReminderEventKey(event)
+    const delivery = deliveries[key]
+    const meetingAlreadyReminded = type === "meeting-1-day"
+      && (delivery?.meetingDayBeforeDate === reminderDay || delivery?.bucket === `${reminderDay}-20`)
+    if (meetingAlreadyReminded || delivery?.bucket === eventBucket) {
+      if (type === "meeting-1-day" && delivery?.meetingDayBeforeDate !== reminderDay) {
+        deliveries[key] = { ...delivery, meetingDayBeforeDate: reminderDay }
+        skippedMeetingReminders = true
+      }
+      return false
+    }
+    return true
   })
-  if (!freshReminders.length) return
+  if (!freshReminders.length) {
+    if (skippedMeetingReminders) await chrome.storage.local.set({ [DEADLINE_REMINDER_DELIVERIES_KEY]: deliveries })
+    return
+  }
 
   const title = deadlineReminderTitle(type)
   const lines = freshReminders.slice(0, 5).map(({ event }) => {
@@ -484,9 +504,12 @@ async function deliverDeadlineReminderGroup(type, scheduledAt, reminders) {
     if (sentAt - (Number(deliveries[key]?.sentAt) || 0) > 45 * 24 * 60 * 60 * 1000) delete deliveries[key]
   })
   freshReminders.forEach(({ event, scheduledAt: eventScheduledAt }) => {
-    deliveries[deadlineReminderEventKey(event)] = {
+    const key = deadlineReminderEventKey(event)
+    deliveries[key] = {
+      ...deliveries[key],
       bucket: hanoiHourBucket(eventScheduledAt || scheduledAt),
-      sentAt
+      sentAt,
+      ...(type === "meeting-1-day" ? { meetingDayBeforeDate: reminderDay } : {})
     }
   })
   await chrome.storage.local.set({ [DEADLINE_REMINDER_DELIVERIES_KEY]: deliveries })
@@ -623,6 +646,7 @@ async function syncDeadlineReminderEvents(rawEvents) {
     await chrome.storage.local.set({ [DEADLINE_REMINDER_EVENTS_KEY]: events })
     const now = Date.now()
     await deliverExactDeadlineReminders(events, now)
+    await deliverNextDayMeetingReminders(events, now)
     await scheduleNextExactDeadlineAlarm(events, now)
     return { ok: true, count: events.length }
   })

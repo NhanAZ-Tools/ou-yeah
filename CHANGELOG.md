@@ -2,6 +2,10 @@
 
 ## Chưa phát hành
 
+- Tô đỏ VC/meeting diễn ra ngày mai, hiển thị nhãn `NGÀY MAI` và đếm ngược; cập nhật trạng thái khi sang ngày theo giờ Việt Nam.
+- Gửi bù thông báo VC ngày mai khi Chrome khởi động hoặc lịch được đồng bộ sau 20:00; chỉ nhắc trước ngày học một lần mỗi tối và giữ các mốc 3/2/1 giờ trước buổi học.
+- Thêm bộ lọc `Chỉ VC / Meeting` vào trang Deadline, áp dụng cả khi tìm kiếm, lọc môn học và xuất lịch.
+
 ## 2.4.0 - 2026-10-02
 
 - Thêm trang Deadline theo tháng với lọc môn học, tìm bài, bộ lọc mặc định `Ẩn đã thực hiện`, `Cần làm hôm nay` và trễ hạn đã/chưa nộp; hiển thị hạn gia hạn dưới bài gốc.

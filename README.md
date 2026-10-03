@@ -75,6 +75,8 @@ Các mốc ngày được tính theo `Asia/Ho_Chi_Minh`. Tiện ích kết hợp
 
 Nhắc lịch dùng dữ liệu đã đồng bộ từ trang `Deadline` và chạy khi Chrome hoạt động. Mục đã hoàn thành hoặc đã quá hạn không được nhắc; cùng một mục không gửi lặp trong cùng khung giờ nếu hai cách tính trùng nhau. Bấm thông báo để mở trang Deadline. Khi bài nộp hoặc lịch VC thay đổi trên ELOLMS, mở trang Deadline hoặc bấm `Đồng bộ lại` để cập nhật.
 
+VC/meeting diễn ra ngày mai được tô đỏ, có nhãn `NGÀY MAI` và đếm ngược theo giờ Việt Nam. Nếu Chrome khởi động hoặc lịch mới đồng bộ sau 20:00, tiện ích gửi bù thông báo VC ngày mai một lần trong tối đó; các mốc trước buổi học 3/2/1 giờ vẫn được giữ. Chọn `Chỉ VC / Meeting` trong bộ lọc để xem riêng các buổi VC/meeting của tháng đang chọn, kết hợp với bộ lọc môn học và tìm kiếm.
+
 ## Tuyên bố từ chối trách nhiệm
 
 OU Yeah! là tiện ích được làm trước hết cho nhu cầu học tập cá nhân. Mình thấy nó hữu ích trong quá trình học nên chia sẻ lại cho người dùng tự cân nhắc sử dụng. Đây không phải tiện ích chính thức của Trường Đại học Mở TP. Hồ Chí Minh, ELOLMS, Thư Quán OU hay bất kỳ đơn vị liên quan nào.

@@ -38,11 +38,16 @@ async function createDownloadHarness({ stateForDownload = () => "complete", now 
   const notifications = []
   const revokedUrls = []
   const states = new Map()
+  const alarms = new Map()
   const storage = {}
   const downloadEvents = createEvent()
   const chrome = {
     action: { onClicked: createEvent() },
-    alarms: { get: async () => undefined, create: async () => {} },
+    alarms: {
+      get: async (name) => alarms.get(name),
+      create: async (name, options) => { alarms.set(name, { name, scheduledTime: options.when }) },
+      clear: async (name) => alarms.delete(name)
+    },
     downloads: {
       onChanged: downloadEvents,
       async download(options) {
@@ -85,7 +90,7 @@ async function createDownloadHarness({ stateForDownload = () => "complete", now 
   const background = vm.createContext({ URL, Date: Clock, setTimeout, clearTimeout, chrome })
   vm.runInContext(await sourceFile("background.js"), background)
   return {
-    background, downloads, notifications, revokedUrls, states, storage, downloadEvents,
+    background, downloads, notifications, revokedUrls, states, storage, downloadEvents, alarms,
     request(message, sender = elolmsSender) {
       return new Promise((resolve) => runtimeListener(message, sender, resolve))
     }
@@ -260,20 +265,138 @@ test("exact reminders cover 72/24 hours and meeting 3/2/1 hours without repeatin
   }
 })
 
+test("late meeting sync catches up the day-before notification once and schedules the 3-hour reminder", async () => {
+  let now = Date.parse("2026-10-03T21:19:00+07:00")
+  const harness = await createDownloadHarness({ now: () => now })
+  const meeting = {
+    title: "Video conference 4", course: "Lập trình hướng đối tượng - 2531", kind: "meeting",
+    date: Date.parse("2026-10-04T07:00:00+07:00"), href: "https://elolms.ou.edu.vn/mod/forum/view.php?id=448334"
+  }
+  const message = { type: "ou-yeah-sync-deadline-reminders", events: [
+    meeting,
+    { ...meeting, title: "Đã tham gia", completed: true },
+    { ...meeting, title: "VC ngày kia", date: Date.parse("2026-10-05T07:00:00+07:00") },
+    { ...meeting, title: "VC hôm nay", date: Date.parse("2026-10-03T22:59:00+07:00") },
+    { ...meeting, title: "Đã qua", date: Date.parse("2026-10-02T07:00:00+07:00") }
+  ] }
+  assert.equal((await harness.request(message)).ok, true)
+  assert.deepEqual(harness.notifications.map(item => item.title), ["VC diễn ra ngày mai"])
+  assert.match(harness.notifications[0].message, /Video conference 4/)
+  assert.match(harness.notifications[0].message, /04[-/]10/)
+  assert.match(harness.notifications[0].message, /07:00/)
+  assert.doesNotMatch(harness.notifications[0].message, /Đã tham gia|ngày kia|hôm nay|Đã qua/)
+  await harness.request(message)
+  assert.equal(harness.notifications.length, 1)
+  now = Date.parse("2026-10-03T22:20:00+07:00")
+  const nextDayOnly = { ...message, events: [meeting] }
+  await harness.request(nextDayOnly)
+  await harness.background.restoreDeadlineReminderAlarms()
+  assert.equal(harness.notifications.length, 1)
+  assert.equal(harness.alarms.get("ouYeahDeadlineReminder:exact").scheduledTime,
+    Date.parse("2026-10-04T04:00:00+07:00"))
+})
+
+test("meeting notifications wait until 20:00 and keep their daily marker through exact reminders", async () => {
+  let now = Date.parse("2026-10-03T19:59:00+07:00")
+  const harness = await createDownloadHarness({ now: () => now })
+  const meeting = {
+    title: "VC qua nửa đêm", course: "Môn A", kind: "meeting",
+    date: Date.parse("2026-10-04T00:30:00+07:00")
+  }
+  const message = { type: "ou-yeah-sync-deadline-reminders", events: [meeting] }
+  await harness.request(message)
+  assert.equal(harness.notifications.length, 0)
+  now = Date.parse("2026-10-03T20:00:00+07:00")
+  await harness.background.handleDeadlineDailyAlarm(20, now)
+  assert.equal(harness.notifications[0].title, "VC diễn ra ngày mai")
+  now = Date.parse("2026-10-03T21:30:00+07:00")
+  await harness.request(message)
+  assert.deepEqual(harness.notifications.map(item => item.title), ["VC diễn ra ngày mai", "VC bắt đầu trong 3 giờ"])
+  await harness.background.restoreDeadlineReminderAlarms()
+  assert.equal(harness.notifications.length, 2)
+  for (const [time, hours] of [["22:30:00", 2], ["23:30:00", 1]]) {
+    now = Date.parse("2026-10-03T" + time + "+07:00")
+    await harness.request(message)
+    assert.equal(harness.notifications.at(-1).title, "VC bắt đầu trong " + hours + " giờ")
+  }
+  assert.equal(harness.notifications.filter(item => item.title === "VC diễn ra ngày mai").length, 1)
+})
+
+test("Chrome startup catches up a missed meeting reminder and respects a legacy 20:00 delivery", async () => {
+  const now = Date.parse("2026-12-31T21:20:00+07:00")
+  const meeting = {
+    title: "VC đầu năm", course: "Môn A", kind: "meeting",
+    date: Date.parse("2027-01-01T07:00:00+07:00")
+  }
+  const startup = await createDownloadHarness({ now: () => now })
+  startup.storage.ouYeahDeadlineReminderEventsV1 = [meeting]
+  await startup.background.restoreDeadlineReminderAlarms()
+  assert.deepEqual(startup.notifications.map(item => item.title), ["VC diễn ra ngày mai"])
+  await startup.background.restoreDeadlineReminderAlarms()
+  assert.equal(startup.notifications.length, 1)
+  const legacy = await createDownloadHarness({ now: () => now })
+  legacy.storage.ouYeahDeadlineReminderEventsV1 = [meeting]
+  const key = legacy.background.deadlineReminderEventKey(meeting)
+  legacy.storage.ouYeahDeadlineReminderDeliveriesV1 = {
+    [key]: { bucket: "2026-12-31-20", sentAt: now - 80 * 60000 }
+  }
+  await legacy.background.restoreDeadlineReminderAlarms()
+  assert.equal(legacy.notifications.length, 0)
+  assert.equal(legacy.storage.ouYeahDeadlineReminderDeliveriesV1[key].meetingDayBeforeDate, "2026-12-31")
+})
+
 async function createDeadlineHarness() {
   const window = { addEventListener() {}, clearTimeout() {}, setTimeout() { return 0 } }
   window.top = window.self = window
   const context = vm.createContext({
-    window, Date, URL, URLSearchParams,
+    window, Date, URL, URLSearchParams, TextEncoder,
     location: new URL("https://elolms.ou.edu.vn/course/view.php"),
     document: { getElementById: () => ({}), addEventListener() {} }
   })
   vm.runInContext(exposeIife(await sourceFile("deadlines.js"), [
     "mergeEvents", "buildDeadlineEntries", "filterCompletedDeadlineEntry", "isEventVisibleForCompletionFilter",
-    "serializeDeadlineEvents", "deserializeDeadlineEvents", "applyCachedCompletion"
+    "serializeDeadlineEvents", "deserializeDeadlineEvents", "applyCachedCompletion",
+    "isPendingMeetingTomorrow", "completionFilterEmptyMessage", "renderDeadlineIcs"
   ]), context)
   return context.hooks
 }
+
+test("tomorrow meeting urgency uses Vietnam calendar days across month and year boundaries", async () => {
+  const hooks = await createDeadlineHarness()
+  const meeting = { title: "VC", kind: "meeting", date: new Date("2026-10-04T07:00:00+07:00") }
+  const now = Date.parse("2026-10-03T21:20:00+07:00")
+  assert.equal(hooks.isPendingMeetingTomorrow(meeting, now), true)
+  assert.equal(hooks.isPendingMeetingTomorrow({ ...meeting, completed: true }, now), false)
+  assert.equal(hooks.isPendingMeetingTomorrow({ ...meeting, kind: "deadline" }, now), false)
+  assert.equal(hooks.isPendingMeetingTomorrow({ ...meeting, date: new Date("2026-10-03T23:55:00+07:00") }, now), false)
+  assert.equal(hooks.isPendingMeetingTomorrow({ ...meeting, date: new Date("2026-10-05T07:00:00+07:00") }, now), false)
+  assert.equal(hooks.isPendingMeetingTomorrow({ ...meeting, date: new Date(NaN) }, now), false)
+  assert.equal(hooks.isPendingMeetingTomorrow(meeting, Date.parse("2026-10-04T00:01:00+07:00")), false)
+  assert.equal(hooks.isPendingMeetingTomorrow({ ...meeting, date: new Date("2026-11-01T23:00:00+07:00") },
+    Date.parse("2026-10-31T01:00:00+07:00")), true)
+  assert.equal(hooks.isPendingMeetingTomorrow({ ...meeting, date: new Date("2027-01-01T07:00:00+07:00") },
+    Date.parse("2026-12-31T21:20:00+07:00")), true)
+})
+
+test("meeting-only filtering excludes deadline pairs and keeps completed meetings and calendar export", async () => {
+  const hooks = await createDeadlineHarness()
+  const date = new Date("2026-10-04T07:00:00+07:00")
+  const meeting = { title: "Video conference 4", course: "Môn A", kind: "meeting", date, time: "07:00" }
+  const completedMeeting = { ...meeting, title: "VC đã tham gia", completed: true }
+  const deadline = { ...meeting, title: "Bài kiểm tra Chương 5", kind: "deadline" }
+  const extension = { ...deadline, title: deadline.title + " - Gia hạn", date: new Date("2026-10-11T23:55:00+07:00") }
+  const all = [meeting, completedMeeting, deadline, extension]
+  const entries = hooks.buildDeadlineEntries(all)
+  const filtered = entries.map(entry => hooks.filterCompletedDeadlineEntry(entry, all, "meetings-only")).filter(Boolean)
+  assert.equal(filtered.length, 2)
+  const events = all.filter(event => hooks.isEventVisibleForCompletionFilter(event, "meetings-only", all))
+  assert.deepEqual(events, [meeting, completedMeeting])
+  assert.equal(hooks.completionFilterEmptyMessage("meetings-only"), "Không có buổi VC/meeting trong tháng này.")
+  const ics = hooks.renderDeadlineIcs(events, all)
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 2)
+  assert.match(ics, /VC\/MEETING/)
+  assert.doesNotMatch(ics, /Bài kiểm tra/)
+})
 
 test("deadline filters keep extensions beside their original deadline and deduplicate VC sources", async () => {
   const hooks = await createDeadlineHarness()

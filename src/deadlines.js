@@ -1303,6 +1303,7 @@
             <div class="ou-deadline-completion-menu" role="listbox" hidden>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="all" aria-selected="false">Tất cả deadline</button>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="hide-completed" aria-selected="true">Ẩn đã thực hiện</button>
+              <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="meetings-only" aria-selected="false">Chỉ VC / Meeting</button>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="due-today" aria-selected="false">Cần làm hôm nay</button>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="overdue-unsubmitted" aria-selected="false">Deadline trễ hạn (Chưa nộp)</button>
               <button type="button" class="ou-deadline-completion-option" role="option" data-completion-value="overdue-submitted" aria-selected="false">Deadline trễ hạn (Đã nộp)</button>
@@ -1450,7 +1451,7 @@
     if (!state) return
 
     const now = Date.now()
-    let shouldRender = false
+    let shouldRender = dashboard.dataset.ouDeadlineDay !== formatHanoiDateStamp(new Date(now))
     dashboard.querySelectorAll("[data-ou-deadline-countdown]").forEach((element) => {
       const deadlineTime = Number(element.getAttribute("data-deadline-time"))
       if (!Number.isFinite(deadlineTime)) return
@@ -1712,6 +1713,7 @@
     const nextMonth = addHanoiMonths(month, 1)
     const query = normalizeText(state.query)
     const now = Date.now()
+    dashboard.dataset.ouDeadlineDay = formatHanoiDateStamp(new Date(now))
     const monthEntries = buildDeadlineEntries(state.events)
       .filter((entry) => entry.events.some((event) => event.date >= month && event.date < nextMonth))
       .filter((entry) => !state.selectedCourse || entry.course === state.selectedCourse)
@@ -2045,6 +2047,7 @@
   }
 
   function isEventVisibleForCompletionFilter(event, filter, allEvents, now = Date.now()) {
+    if (filter === "meetings-only") return event.kind === "meeting"
     if (filter === "hide-completed") return !isDeadlineCompletedForFilter(event, allEvents)
     if (filter === "due-today") {
       if (event.kind === "meeting" || !(event.date instanceof Date)) return false
@@ -2082,6 +2085,7 @@
   }
 
   function completionFilterEmptyMessage(filter) {
+    if (filter === "meetings-only") return "Không có buổi VC/meeting trong tháng này."
     if (filter === "hide-completed") return "Không còn deadline hoặc buổi VC/meeting chưa thực hiện trong tháng này."
     if (filter === "due-today") return "Không có deadline nào cần thực hiện hôm nay trong tháng này."
     if (filter === "overdue-unsubmitted") return "Không có deadline trễ hạn chưa nộp trong tháng này."
@@ -2101,6 +2105,13 @@
       extensions: visibleEvents.slice(1),
       events: visibleEvents,
     }
+  }
+
+  function isPendingMeetingTomorrow(event, now = Date.now()) {
+    if (event.kind !== "meeting" || isDeadlineCompleted(event) || !(event.date instanceof Date)) return false
+    const today = getHanoiDateParts(new Date(now))
+    const tomorrow = createHanoiDate(today.year, today.month - 1, today.day + 1)
+    return event.date.getTime() > now && isSameHanoiDay(event.date, tomorrow)
   }
 
   function createDeadlineRow(event, allEvents) {
@@ -2130,14 +2141,16 @@
       && !extensionNotNeeded
       && !isInactiveExtension
       && isSameHanoiDay(event.date, new Date(now))
+    const isMeetingTomorrow = !extensionNotNeeded && !isInactiveExtension && isPendingMeetingTomorrow(event, now)
     const isDueSoon = !isCompleted
       && !extensionNotNeeded
       && !isTodayPending
+      && !isMeetingTomorrow
       && eventTime >= now
       && eventTime <= now + (3 * 24 * 60 * 60 * 1000)
     const isBaseDeadline = !isMeeting && !isExtension && !isOverdue && !isDueSoon && !isTodayPending
-    const countdownMarkup = isTodayPending && eventTime > now
-      ? `<span class="ou-deadline-countdown" data-ou-deadline-countdown data-deadline-time="${eventTime}" title="Đếm ngược theo múi giờ UTC+7 · Hạn ${escapeAttribute(`${formatDate(event.date)} ${event.time}`)}">Còn ${formatDeadlineCountdown(eventTime - now)}</span>`
+    const countdownMarkup = (isTodayPending || isMeetingTomorrow) && eventTime > now
+      ? `<span class="ou-deadline-countdown" data-ou-deadline-countdown data-deadline-time="${eventTime}" title="Đếm ngược theo múi giờ UTC+7 · ${isMeeting ? "Bắt đầu" : "Hạn"} ${escapeAttribute(`${formatDate(event.date)} ${event.time}`)}">Còn ${formatDeadlineCountdown(eventTime - now)}</span>`
       : ""
     const typeLabel = isMeeting ? "VC / MEETING" : isExtension ? "GIA HẠN" : "DEADLINE"
     const typeClass = isMeeting ? "ou-deadline-type-meeting" : isExtension ? "ou-deadline-type-extension" : ""
@@ -2160,6 +2173,8 @@
           ? '<span class="ou-deadline-status-overdue">QUÁ HẠN</span>'
           : isTodayPending
             ? '<span class="ou-deadline-status-today">HÔM NAY</span>'
+          : isMeetingTomorrow
+            ? '<span class="ou-deadline-status-today">NGÀY MAI</span>'
           : isDueSoon
             ? '<span class="ou-deadline-status-due-soon"><span class="ou-deadline-due-soon-icon" aria-hidden="true"></span>SẮP ĐẾN HẠN</span>'
         : ""
@@ -2169,6 +2184,7 @@
     row.classList.toggle("ou-deadline-row-overdue-actionable", isOverdue && isForum)
     row.classList.toggle("ou-deadline-row-due-soon", isDueSoon)
     row.classList.toggle("ou-deadline-row-today-pending", isTodayPending)
+    row.classList.toggle("ou-deadline-row-meeting-tomorrow", isMeetingTomorrow)
     row.classList.toggle("ou-deadline-row-base", isBaseDeadline)
     row.classList.toggle("ou-deadline-row-extension-actionable", isExtensionActionable)
     row.classList.toggle("ou-deadline-row-extension-inactive", isInactiveExtension)
@@ -2371,12 +2387,12 @@
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-content h3 a { color: #737b89; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-content p { color: #8d95a4; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-extension-inactive .ou-deadline-type-extension { background: #eef0f4; color: #70798a; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-today-pending { border-color: #c94a55; background: linear-gradient(110deg, #fff0f1, #fff); box-shadow: inset 3px 0 0 #a92331, 0 5px 16px rgba(169, 35, 49, .12); opacity: 1; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-today-pending:hover { border-color: #b83240; background: #ffe7e9; box-shadow: inset 3px 0 0 #981d2a, 0 8px 20px rgba(169, 35, 49, .16); }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-today-pending { border-color: transparent; background: linear-gradient(110deg, #fff0f1, #fff); box-shadow: inset 3px 0 0 #a92331; opacity: 1; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row.ou-deadline-row-today-pending:hover { border-color: transparent; background: #ffe7e9; box-shadow: inset 3px 0 0 #981d2a; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-today-pending .ou-deadline-date strong { color: #a92331; }
-      #${DEADLINE_DASHBOARD_ID} .ou-deadline-row-today-pending .ou-deadline-countdown { color: #981d2a; }
+      #${DEADLINE_DASHBOARD_ID} :is(.ou-deadline-row-today-pending, .ou-deadline-row-meeting-tomorrow) { border-color: #c94a55; background: linear-gradient(110deg, #fff0f1, #fff); box-shadow: inset 3px 0 0 #a92331, 0 5px 16px rgba(169, 35, 49, .12); opacity: 1; }
+      #${DEADLINE_DASHBOARD_ID} :is(.ou-deadline-row-today-pending, .ou-deadline-row-meeting-tomorrow):hover { border-color: #b83240; background: #ffe7e9; box-shadow: inset 3px 0 0 #981d2a, 0 8px 20px rgba(169, 35, 49, .16); }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row:is(.ou-deadline-row-today-pending, .ou-deadline-row-meeting-tomorrow) { border-color: transparent; background: linear-gradient(110deg, #fff0f1, #fff); box-shadow: inset 3px 0 0 #a92331; opacity: 1; }
+      #${DEADLINE_DASHBOARD_ID} .ou-deadline-pair .ou-deadline-row:is(.ou-deadline-row-today-pending, .ou-deadline-row-meeting-tomorrow):hover { border-color: transparent; background: #ffe7e9; box-shadow: inset 3px 0 0 #981d2a; }
+      #${DEADLINE_DASHBOARD_ID} :is(.ou-deadline-row-today-pending, .ou-deadline-row-meeting-tomorrow) .ou-deadline-date strong { color: #a92331; }
+      #${DEADLINE_DASHBOARD_ID} :is(.ou-deadline-row-today-pending, .ou-deadline-row-meeting-tomorrow) .ou-deadline-countdown { color: #981d2a; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check { display: inline-grid; width: 22px; height: 22px; place-items: center; cursor: default; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check input { position: absolute; width: 1px; height: 1px; opacity: 0; }
       #${DEADLINE_DASHBOARD_ID} .ou-deadline-check input + span { position: relative; display: block; width: 18px; height: 18px; border: 1.5px solid #c8d0e2; border-radius: 6px; background: #fff; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }

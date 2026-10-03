@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>Deadline meeting regression</title>
+  <style>
+    body { margin: 28px auto; max-width: 1100px; padding: 0 20px; font-family: "Segoe UI", sans-serif; }
+    #result { padding: 14px; background: #edf8ee; border-radius: 8px; }
+    #result[data-status="failed"] { background: #fff0f0; }
+  </style>
+</head>
+<body>
+  <h1>Kiểm thử cảnh báo và bộ lọc VC / Meeting</h1>
+  <p id="result" role="status">Đang kiểm tra...</p>
+  <main id="preview"></main>
+  <script type="module">
+    const result = document.getElementById("result")
+    try {
+      window.chrome = { runtime: { getURL: path => new URL("/" + path, location.origin).href } }
+      let fixedNow = Date.parse("2026-10-03T21:20:00+07:00")
+      window.Date = class extends Date {
+        constructor(...args) { super(...(args.length ? args : [fixedNow])) }
+        static now() { return fixedNow }
+      }
+      const source = await (await fetch("../../src/deadlines.js")).text()
+      const end = source.lastIndexOf("})()")
+      const hooks = "window.deadlineTestHooks = { createDeadlineDashboard, updateDeadlineCountdowns };\n"
+      const script = document.createElement("script")
+      script.textContent = (source.slice(0, end) + hooks + source.slice(end))
+        .replace("if (location.hostname !== ELOLMS_HOST || window.top !== window.self) return", "if (window.top !== window.self) return")
+      document.head.append(script)
+      const api = window.deadlineTestHooks
+      const meeting = {
+        title: "Video conference 4", course: "Lập trình hướng đối tượng - 2531", kind: "meeting",
+        date: new Date("2026-10-04T07:00:00+07:00"), time: "07:00", href: "/mod/forum/view.php?id=448334"
+      }
+      const events = [
+        meeting,
+        { ...meeting, title: "Video conference 3", course: "Toán rời rạc - 2531", date: new Date("2026-10-18T10:00:00+07:00"), time: "10:00", href: "/mod/forum/view.php?id=468935" },
+        { ...meeting, title: "Bài kiểm tra kết thúc Chương 5", kind: "deadline", date: new Date("2026-10-05T23:55:00+07:00"), time: "23:55", href: "/mod/quiz/view.php?id=448844" },
+        { ...meeting, title: "Bài kiểm tra kết thúc Chương 5 - Gia hạn", kind: "deadline", date: new Date("2026-10-12T23:55:00+07:00"), time: "23:55", href: "/mod/quiz/view.php?id=448848" }
+      ]
+      const dashboard = api.createDeadlineDashboard(events)
+      document.getElementById("preview").append(dashboard)
+      const checks = []
+      const check = (condition, message) => {
+        if (!condition) throw new Error(message)
+        checks.push(message)
+      }
+      const tomorrowRow = dashboard.querySelector(".ou-deadline-row-meeting-tomorrow")
+      check(tomorrowRow?.querySelector("h3").textContent === meeting.title, "VC ngày mai có trạng thái cần chú ý")
+      check(tomorrowRow.querySelector(".ou-deadline-status-today").textContent === "NGÀY MAI", "Nhãn hiển thị NGÀY MAI")
+      check(getComputedStyle(tomorrowRow.querySelector(".ou-deadline-date strong")).color === "rgb(169, 35, 49)", "Ngày VC hiển thị màu đỏ")
+      check(tomorrowRow.querySelector("[data-ou-deadline-countdown]").textContent.includes("09 giờ 40 phút"), "Đếm ngược đúng giờ bắt đầu VC")
+      check(!tomorrowRow.classList.contains("ou-deadline-row-due-soon"), "VC ngày mai không còn mang trạng thái vàng")
+      fixedNow = Date.parse("2026-10-04T00:00:01+07:00")
+      api.updateDeadlineCountdowns(dashboard)
+      const todayRow = dashboard.querySelector(".ou-deadline-row-today-pending")
+      check(todayRow?.querySelector("h3").textContent === meeting.title, "VC vẫn màu đỏ khi sang ngày diễn ra")
+      check(todayRow.querySelector(".ou-deadline-status-today").textContent === "HÔM NAY", "Nhãn tự đổi thành HÔM NAY qua nửa đêm")
+      check(dashboard.querySelectorAll(".ou-deadline-row-meeting-tomorrow").length === 0, "Không giữ nhãn ngày mai cũ")
+      fixedNow = Date.parse("2026-10-03T21:20:00+07:00")
+      api.updateDeadlineCountdowns(dashboard)
+      const trigger = dashboard.querySelector(".ou-deadline-completion-trigger")
+      trigger.click()
+      dashboard.querySelector('[data-completion-value="meetings-only"]').click()
+      check(dashboard.querySelector("[data-ou-deadline-completion-value]").textContent === "Chỉ VC / Meeting", "Bộ lọc chọn đúng nhãn mới")
+      check(dashboard.querySelectorAll(".ou-deadline-row").length === 2, "Bộ lọc chỉ hiển thị hai VC")
+      check(dashboard.querySelectorAll(".ou-deadline-pair").length === 0, "Không hiển thị nhóm bài kiểm tra")
+      check(dashboard.querySelector("[data-ou-deadline-count]").textContent === "2", "Số mục cập nhật theo bộ lọc")
+      result.dataset.status = "passed"
+      result.textContent = `PASS · ${checks.length} kiểm tra · VC ngày mai màu đỏ · Chỉ VC / Meeting.`
+      result.title = checks.join("\n")
+    } catch (error) {
+      result.dataset.status = "failed"
+      result.textContent = "FAIL · " + error.message
+    }
+  </script>
+</body>
+</html>
