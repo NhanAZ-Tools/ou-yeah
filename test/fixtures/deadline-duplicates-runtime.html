@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>Deadline duplicate regression</title>
+  <style>
+    body { margin: 28px auto; max-width: 1100px; padding: 0 20px; font-family: "Segoe UI", sans-serif; }
+    #result { padding: 14px; background: #edf8ee; border-radius: 8px; }
+    #result[data-status="failed"] { background: #fff0f0; }
+  </style>
+</head>
+<body>
+  <h1>Kiểm thử Deadline trùng từ lịch và trang môn học</h1>
+  <p id="result" role="status">Đang kiểm tra...</p>
+  <template id="course">
+    <header><h1>Toán rời rạc - 2531</h1></header>
+    <div class="activity">
+      <div class="activityname"><a href="/mod/assign/view.php?id=469306"><span class="instancename">Bài kiểm tra kết thúc Chương 5 <span class="accesshide"> Bài tập</span></span></a></div>
+      <p>Deadline Thứ Bảy, 3 tháng 10 2026, 23:55</p>
+    </div>
+    <div class="activity">
+      <div class="activityname"><a href="/mod/assign/view.php?id=469310"><span class="instancename">Bài kiểm tra kết thúc Chương 5 - Gia hạn <span class="accesshide"> Bài tập</span></span></a></div>
+      <p>Deadline Thứ Bảy, 10 tháng 10 2026, 23:55</p>
+    </div>
+    <div class="activity">
+      <div class="activityname"><a href="/mod/assign/view.php?id=469399"><span class="instancename">Bài kiểm tra kết thúc Chương 5 Bài tập <span class="accesshide"> Bài tập</span></span></a></div>
+      <p>Deadline Thứ Bảy, 3 tháng 10 2026, 23:55</p>
+    </div>
+  </template>
+  <main id="preview"></main>
+  <script type="module">
+    const result = document.getElementById("result")
+    try {
+      window.chrome = { runtime: { getURL: (path) => new URL("/" + path, location.origin).href } }
+      const fixedNow = Date.parse("2026-10-03T14:24:00+07:00")
+      window.Date = class extends Date {
+        constructor(...args) { super(...(args.length ? args : [fixedNow])) }
+        static now() { return fixedNow }
+      }
+      const source = await (await fetch("../../src/deadlines.js")).text()
+      const end = source.lastIndexOf("})()")
+      const hooks = "window.deadlineTestHooks = { parseCourseDeadlines, extractEvent, mergeEvents, buildDeadlineEntries, createDeadlineDashboard, serializeDeadlineEvents, deserializeDeadlineEvents };\n"
+      const script = document.createElement("script")
+      script.textContent = (source.slice(0, end) + hooks + source.slice(end))
+        .replace("if (location.hostname !== ELOLMS_HOST || window.top !== window.self) return", "if (window.top !== window.self) return")
+      document.head.append(script)
+      const api = window.deadlineTestHooks
+      const courseHtml = document.getElementById("course").innerHTML
+      const parsed = api.parseCourseDeadlines(courseHtml, new URL("/course/view.php?id=3591", location.origin).href)
+      const nativeEvents = [
+        ["Bài kiểm tra kết thúc Chương 5", "469306", "2026-10-03T23:55:00+07:00"],
+        ["Bài kiểm tra kết thúc Chương 5 - Gia hạn", "469310", "2026-10-10T23:55:00+07:00"]
+      ].map(([title, id, date]) => {
+        const item = document.createElement("article")
+        item.innerHTML = `<h3>${title}</h3><a href="/course/view.php?id=3591">Toán rời rạc - 2531</a><a href="/calendar/view.php?time=${Date.parse(date) / 1000}">Ngày</a><a href="/mod/assign/view.php?id=${id}&action=editsubmission">Mở bài</a>`
+        return api.extractEvent(item)
+      })
+      const checks = []
+      const check = (condition, message) => {
+        if (!condition) throw new Error(message)
+        checks.push(message)
+      }
+      check(parsed[0].title === nativeEvents[0].title, "Bỏ nhãn ẩn Bài tập khỏi tên bài")
+      check(parsed[1].title === nativeEvents[1].title, "Bỏ nhãn ẩn khỏi tên bài gia hạn")
+      check(parsed[2].title === "Bài kiểm tra kết thúc Chương 5 Bài tập", "Giữ chữ Bài tập trong tên do giảng viên đặt")
+      check(parsed.every(event => event.source.querySelector(".accesshide")), "Giữ nguyên nhãn ẩn trong HTML nguồn")
+      const merged = api.mergeEvents(parsed.slice(0, 2), nativeEvents)
+      check(merged.length === 2, "Gộp 4 nguồn thành 2 hạn")
+      check(api.buildDeadlineEntries(merged).length === 1, "Hiển thị một nhóm hạn gốc và gia hạn")
+      check(api.mergeEvents(parsed, nativeEvents).length === 3, "Giữ riêng bài khác ID")
+      const oldCache = api.deserializeDeadlineEvents([...nativeEvents, ...parsed.slice(0, 2).map(event => ({ ...event, title: event.title + " Bài tập", completed: true }))].map(event => ({ ...event, date: event.date.toISOString() })))
+      const migrated = api.serializeDeadlineEvents(oldCache)
+      check(migrated.length === 2 && migrated.every(event => event.completed), "Gộp cache cũ và giữ trạng thái hoàn thành")
+      check(migrated.every((event, index) => event.title === nativeEvents[index].title), "Tên trong cache cũ trở về tên bài gốc")
+      document.getElementById("preview").append(api.createDeadlineDashboard(merged))
+      check(document.querySelectorAll(".ou-deadline-pair").length === 1, "DOM có đúng một nhóm bài")
+      check(document.querySelectorAll(".ou-deadline-row").length === 2, "DOM có đúng hai dòng hạn")
+      check(document.querySelectorAll(".ou-deadline-row-today-pending").length === 1, "Hạn hôm nay vẫn có trạng thái đỏ")
+      result.dataset.status = "passed"
+      result.textContent = `PASS · ${checks.length} kiểm tra · 1 nhóm bài, 2 hạn, không còn bản trùng.`
+      result.title = checks.join("\n")
+    } catch (error) {
+      result.dataset.status = "failed"
+      result.textContent = "FAIL · " + error.message
+    }
+  </script>
+</body>
+</html>

@@ -366,7 +366,8 @@
       if (!(event?.date instanceof Date)) return
       const key = eventIdentityKey(event)
       const existing = unique.get(key)
-      unique.set(key, existing ? mergeDuplicateEvents(existing, event) : event)
+      const normalized = { ...event, href: normalizeDeadlineActivityUrl(event.href) }
+      unique.set(key, existing ? mergeDuplicateEvents(existing, normalized) : normalized)
     })
 
     return Array.from(unique.values()).sort(compareEvents)
@@ -378,16 +379,37 @@
       return `${minute}|${normalizeText(event.course)}|meeting|${normalizeText(event.title)}`
     }
 
-    const resource = normalizeText(event.href)
+    const resource = normalizeText(normalizeDeadlineActivityUrl(event.href))
     return resource
       ? `${event.date.getTime()}|${normalizeText(event.course)}|${resource}`
       : `${event.date.getTime()}|${normalizeText(event.title)}|${normalizeText(event.course)}`
   }
 
+  function normalizeDeadlineActivityUrl(value) {
+    const original = String(value || "")
+    if (!original) return ""
+    try {
+      const url = new URL(original, location.origin)
+      const id = url.searchParams.get("id")
+      if (url.origin !== location.origin
+        || !/^\/mod\/[^/]+\/view\.php$/.test(url.pathname)
+        || !/^\d+$/.test(id || "")) return original
+      url.search = `?id=${encodeURIComponent(id)}`
+      url.hash = ""
+      return url.toString()
+    } catch {
+      return original
+    }
+  }
+
   function mergeDuplicateEvents(existing, incoming) {
     const existingTitle = normalizeText(existing.title)
     const incomingTitle = normalizeText(incoming.title)
-    const preferred = incomingTitle.length > existingTitle.length ? incoming : existing
+    let preferred = incomingTitle.length > existingTitle.length ? incoming : existing
+    // Older caches included Moodle's hidden activity-type labels in the title.
+    const hiddenTypeSuffix = /\s+(?:bai tap|trac nghiem|dien dan)$/
+    if (existingTitle === incomingTitle.replace(hiddenTypeSuffix, "")) preferred = existing
+    else if (incomingTitle === existingTitle.replace(hiddenTypeSuffix, "")) preferred = incoming
 
     return {
       ...preferred,
@@ -565,8 +587,9 @@
     const cachedByUrl = new Map()
     cachedEvents.forEach((event) => {
       if (!needsRemoteCompletionCheck(event.href)) return
-      const previous = cachedByUrl.get(event.href)
-      cachedByUrl.set(event.href, {
+      const href = normalizeDeadlineActivityUrl(event.href)
+      const previous = cachedByUrl.get(href)
+      cachedByUrl.set(href, {
         completed: previous?.completed === true || event.completed === true,
         completionCheckedAt: Math.max(
           Number(previous?.completionCheckedAt) || 0,
@@ -577,7 +600,7 @@
 
     events.forEach((event) => {
       if (!needsRemoteCompletionCheck(event.href)) return
-      const cached = cachedByUrl.get(event.href)
+      const cached = cachedByUrl.get(normalizeDeadlineActivityUrl(event.href))
       if (!cached) return
       event.completed = event.completed === true || cached.completed === true
       event.completionCheckedAt = Math.max(
@@ -989,7 +1012,7 @@
       const deadlinePattern = /Deadline\s+(?:(?:Thứ|Chủ Nhật)[^,]*,\s*)?(\d{1,2})\s+tháng\s+(\d{1,2})\s+(\d{4}),\s*(\d{1,2}):(\d{2})(?:\s*(AM|PM|SA|CH|A\.M\.|P\.M\.))?/gi
       const titleLink = /** @type {HTMLAnchorElement | null} */ (item.querySelector("a[href*='/mod/'][href*='view.php']"))
       const titleElement = item.querySelector(".instancename, .activityname, h3, h4")
-      const title = cleanEventTitle(titleElement?.textContent || titleLink?.textContent || "Deadline")
+      const title = readEventTitle(titleElement || titleLink) || "Deadline"
       const href = titleLink?.href ? new URL(titleLink.href, courseUrl).toString() : courseUrl
       const course = getCourseNameFromDocument(doc, fallbackCourse, courseUrl)
       const completed = needsRemoteCompletionCheck(href) ? false : detectActivityCompletion(item)
@@ -1178,7 +1201,7 @@
     const titleElement = item.querySelector(
       "h3, h4, .name, .event-name, [data-region='event-name']"
     )
-    const title = cleanEventTitle(titleElement?.textContent || "")
+    const title = readEventTitle(titleElement)
     const courseLink = /** @type {HTMLAnchorElement | null} */ (
       item.querySelector('a[href*="/course/view.php"]')
     )
@@ -2409,6 +2432,13 @@
         #${DEADLINE_DASHBOARD_ID} .ou-deadline-open { grid-column: 3; }
       }
     `
+  }
+
+  function readEventTitle(element) {
+    if (!element) return ""
+    const title = /** @type {Element} */ (element.cloneNode(true))
+    title.querySelectorAll(".accesshide").forEach((label) => label.remove())
+    return cleanEventTitle(title.textContent)
   }
 
   function cleanEventTitle(value) {

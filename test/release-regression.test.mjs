@@ -260,7 +260,7 @@ test("exact reminders cover 72/24 hours and meeting 3/2/1 hours without repeatin
   }
 })
 
-test("deadline filters keep extensions beside their original deadline and deduplicate VC sources", async () => {
+async function createDeadlineHarness() {
   const window = { addEventListener() {}, clearTimeout() {}, setTimeout() { return 0 } }
   window.top = window.self = window
   const context = vm.createContext({
@@ -269,25 +269,99 @@ test("deadline filters keep extensions beside their original deadline and dedupl
     document: { getElementById: () => ({}), addEventListener() {} }
   })
   vm.runInContext(exposeIife(await sourceFile("deadlines.js"), [
-    "mergeEvents", "buildDeadlineEntries", "filterCompletedDeadlineEntry", "isEventVisibleForCompletionFilter"
+    "mergeEvents", "buildDeadlineEntries", "filterCompletedDeadlineEntry", "isEventVisibleForCompletionFilter",
+    "serializeDeadlineEvents", "deserializeDeadlineEvents", "applyCachedCompletion"
   ]), context)
+  return context.hooks
+}
+
+test("deadline filters keep extensions beside their original deadline and deduplicate VC sources", async () => {
+  const hooks = await createDeadlineHarness()
   const now = Date.parse("2026-09-28T20:00:00+07:00")
   const base = { title: "Bài kiểm tra Chương 3", course: "Môn A", date: new Date("2026-09-28T23:55:00+07:00") }
   const extension = { ...base, title: "Bài kiểm tra Chương 3 - Gia hạn", date: new Date("2026-10-05T23:55:00+07:00") }
   const all = [base, extension]
-  const [entry] = context.hooks.buildDeadlineEntries(all)
-  assert.equal(context.hooks.filterCompletedDeadlineEntry(entry, all, "due-today", now).events.length, 2)
+  const [entry] = hooks.buildDeadlineEntries(all)
+  assert.equal(hooks.filterCompletedDeadlineEntry(entry, all, "due-today", now).events.length, 2)
   base.completed = true
-  assert.equal(context.hooks.filterCompletedDeadlineEntry(entry, all, "hide-completed", now), null)
+  assert.equal(hooks.filterCompletedDeadlineEntry(entry, all, "hide-completed", now), null)
   base.completed = false
   base.date = new Date("2026-09-21T23:55:00+07:00")
-  assert.equal(context.hooks.filterCompletedDeadlineEntry(entry, all, "overdue-unsubmitted", now).events.length, 2)
+  assert.equal(hooks.filterCompletedDeadlineEntry(entry, all, "overdue-unsubmitted", now).events.length, 2)
   const afterMidnight = { ...base, date: new Date("2026-09-29T00:05:00+07:00") }
-  assert.equal(context.hooks.isEventVisibleForCompletionFilter(afterMidnight, "due-today", [afterMidnight], now), false)
+  assert.equal(hooks.isEventVisibleForCompletionFilter(afterMidnight, "due-today", [afterMidnight], now), false)
 
   const meeting = { title: "Video conference 3", course: "Môn B", kind: "meeting", date: new Date("2026-09-26T19:00:00+07:00"), href: "https://elolms.ou.edu.vn/mod/forum/view.php?id=1" }
   const duplicate = { ...meeting, href: "https://elolms.ou.edu.vn/mod/forum/discuss.php?d=2", completed: true }
-  const merged = context.hooks.mergeEvents([meeting], [duplicate])
+  const merged = hooks.mergeEvents([meeting], [duplicate])
   assert.equal(merged.length, 1)
   assert.equal(merged[0].completed, true)
+})
+
+test("deadline sources and old caches merge submission-action URLs into one original and extension pair", async () => {
+  const hooks = await createDeadlineHarness()
+  const activity = "https://elolms.ou.edu.vn/mod/assign/view.php?id="
+  const base = {
+    title: "Bài kiểm tra kết thúc Chương 5", course: "Toán rời rạc - 2531", kind: "deadline", time: "23:55",
+    date: new Date("2026-10-03T23:55:00+07:00"), href: activity + "469306&action=editsubmission"
+  }
+  const extension = {
+    ...base, title: base.title + " - Gia hạn", date: new Date("2026-10-10T23:55:00+07:00"),
+    href: activity + "469310&action=editsubmission"
+  }
+  const courseEvents = [base, extension].map((event) => ({
+    ...event, title: event.title + " Bài tập", href: event.href.replace("&action=editsubmission", ""),
+    completed: true, completionCheckedAt: 1234
+  }))
+  for (const [first, second] of [[courseEvents, [base, extension]], [[base, extension], courseEvents]]) {
+    const merged = hooks.mergeEvents(first, second)
+    assert.equal(merged.length, 2)
+    assert.deepEqual(Array.from(merged, (event) => event.title), [base.title, extension.title])
+    assert.deepEqual(Array.from(merged, (event) => event.href), [activity + "469306", activity + "469310"])
+    assert.ok(merged.every((event) => event.completed && event.completionCheckedAt === 1234))
+    const entries = hooks.buildDeadlineEntries(merged)
+    assert.equal(entries.length, 1)
+    assert.equal(entries[0].type, "group")
+    assert.equal(entries[0].events.length, 2)
+  }
+  const cached = hooks.deserializeDeadlineEvents([...courseEvents, base, extension].map((event) => ({
+    ...event, date: event.date.toISOString()
+  })))
+  const serialized = hooks.serializeDeadlineEvents(cached)
+  assert.equal(serialized.length, 2)
+  assert.deepEqual(Array.from(serialized, (event) => event.title), [base.title, extension.title])
+  assert.equal(base.href, activity + "469306&action=editsubmission")
+  const current = [{ ...base, href: activity + "469306", completed: false }]
+  hooks.applyCachedCompletion(current, [{ ...base, completed: true, completionCheckedAt: 2345 }])
+  assert.equal(current[0].completed, true)
+  assert.equal(current[0].completionCheckedAt, 2345)
+})
+
+test("activity URL normalization preserves distinct activities, courses, dates and discussion links", async () => {
+  const hooks = await createDeadlineHarness()
+  const base = {
+    title: "Bài kiểm tra kết thúc Chương 5 Bài tập", course: "Môn A", kind: "deadline", time: "23:55",
+    date: new Date("2026-10-03T23:55:00+07:00"), href: "https://elolms.ou.edu.vn/mod/assign/view.php?id=101"
+  }
+  const aliases = [
+    base,
+    { ...base, href: "/mod/assign/view.php?action=editsubmission&id=101#submission" },
+    { ...base, href: base.href + "&lang=vi&redirect=0" }
+  ]
+  const distinct = [
+    { ...base, href: base.href.replace("101", "102") },
+    { ...base, href: base.href.replace("assign", "quiz") },
+    { ...base, course: "Môn B" },
+    { ...base, date: new Date("2026-10-10T23:55:00+07:00") },
+    { ...base, href: "https://elolms.ou.edu.vn/mod/forum/discuss.php?d=1" },
+    { ...base, href: "https://elolms.ou.edu.vn/mod/forum/discuss.php?d=2" },
+    { ...base, href: "https://example.com/mod/assign/view.php?id=101&action=edit" },
+    { ...base, href: "https://example.com/mod/assign/view.php?id=101" },
+    { ...base, href: "/mod/assign/view.php?action=edit" },
+    { ...base, href: "invalid URL" }
+  ]
+  const merged = hooks.mergeEvents(aliases, distinct)
+  assert.equal(merged.length, 1 + distinct.length)
+  assert.ok(merged.every((event) => event.title === base.title))
+  for (const event of distinct) assert.ok(merged.some((candidate) => candidate.href === event.href))
 })
